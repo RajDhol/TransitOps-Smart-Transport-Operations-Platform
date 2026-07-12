@@ -15,7 +15,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     <AuthProvider>
       <ProtectedRoute>
         {isLoginPage ? (
-          <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <main className="min-h-screen w-screen bg-white">
             {children}
           </main>
         ) : (

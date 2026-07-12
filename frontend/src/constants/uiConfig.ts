@@ -50,3 +50,4 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     allowedRoles: ['Fleet Manager', 'Financial Analyst'],
   },
 ];
+

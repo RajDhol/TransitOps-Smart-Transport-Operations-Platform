@@ -21,8 +21,10 @@ export default function Sidebar() {
     <aside className="w-64 border-r border-gray-200 bg-white flex flex-col h-full font-sans text-gray-900">
       {/* Brand Header */}
       <div className="h-16 flex items-center px-6 border-b border-gray-200">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-xl font-bold tracking-tight text-indigo-600">TransitOps</span>
+        <Link href="/" className="flex items-center gap-1.5">
+          <span className="text-2xl font-bold tracking-tight text-gray-900">
+            Transit<span className="text-indigo-600 font-black">Ops</span>
+          </span>
           <span className="bg-indigo-50 text-indigo-700 text-xs px-2 py-0.5 rounded border border-indigo-100 font-semibold uppercase">
             v1.0
           </span>

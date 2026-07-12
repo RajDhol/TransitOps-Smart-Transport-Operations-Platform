@@ -1,108 +1,224 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import {
+  INITIAL_VEHICLES,
+  INITIAL_DRIVERS,
+  INITIAL_TRIPS,
+  DASHBOARD_TITLES,
+  MockVehicle,
+  MockDriver,
+  MockTrip
+} from '../constants/dashboardContent';
+
+import FleetManagerDashboard from '../components/dashboard/FleetManagerDashboard';
+import DriverDashboard from '../components/dashboard/DriverDashboard';
+import SafetyOfficerDashboard from '../components/dashboard/SafetyOfficerDashboard';
+import FinancialAnalystDashboard from '../components/dashboard/FinancialAnalystDashboard';
 
 export default function DashboardPage() {
   const { user } = useAuth();
 
+  // Core Reactive States
+  const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
+  const [drivers, setDrivers] = useState<MockDriver[]>(INITIAL_DRIVERS);
+  const [trips, setTrips] = useState<MockTrip[]>(INITIAL_TRIPS);
+
+  // System Notifications
+  const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
+
   if (!user) return null;
 
-  // Mock KPIs for the dashboard, which we'll fetch from /api/dashboard later
-  const mockKpis = [
-    { name: 'Active Vehicles', value: 12 },
-    { name: 'Available Vehicles', value: 8 },
-    { name: 'Vehicles in Maintenance', value: 3 },
-    { name: 'Active Trips', value: 6 },
-    { name: 'Pending Trips', value: 2 },
-    { name: 'Drivers On Duty', value: 15 },
-    { name: 'Fleet Utilization', value: '60%' },
-  ];
+  // --- ACTIONS & VALIDATIONS ---
+  const handleCreateTrip = (tripForm: {
+    source: string;
+    destination: string;
+    vehicle_reg: string;
+    driver_id: string;
+    cargo_weight: string;
+    planned_distance: string;
+  }) => {
+    setErrorMsg('');
+    setInfoMsg('');
+
+    const cargo = parseFloat(tripForm.cargo_weight);
+    const distance = parseFloat(tripForm.planned_distance);
+    const driverId = parseInt(tripForm.driver_id);
+
+    const vehicle = vehicles.find((v) => v.registration_number === tripForm.vehicle_reg);
+    const driver = drivers.find((d) => d.id === driverId);
+
+    if (!vehicle || !driver) {
+      setErrorMsg('Please select a valid vehicle and driver.');
+      return;
+    }
+
+    // Business Rules
+    if (vehicle.status !== 'Available') {
+      setErrorMsg(`Vehicle ${vehicle.registration_number} is currently ${vehicle.status} and cannot be dispatched.`);
+      return;
+    }
+
+    if (driver.status !== 'Available') {
+      setErrorMsg(`Driver ${driver.name} is currently ${driver.status} and cannot be assigned.`);
+      return;
+    }
+
+    const expiryDate = new Date(driver.license_expiry);
+    const currentDate = new Date();
+    if (expiryDate < currentDate) {
+      setErrorMsg(`Driver ${driver.name} has an expired license (Expired: ${driver.license_expiry}).`);
+      return;
+    }
+
+    if (cargo > vehicle.max_capacity) {
+      setErrorMsg(`Cargo weight (${cargo}kg) exceeds vehicle maximum capacity (${vehicle.max_capacity}kg).`);
+      return;
+    }
+
+    // Success State Transition
+    const newTripId = trips.length + 101;
+    const addedTrip: MockTrip = {
+      id: newTripId,
+      source: tripForm.source,
+      destination: tripForm.destination,
+      vehicle_reg: vehicle.registration_number,
+      driver_name: driver.name,
+      cargo_weight: cargo,
+      planned_distance: distance,
+      status: 'Dispatched',
+    };
+
+    setTrips([...trips, addedTrip]);
+    setVehicles(
+      vehicles.map((v) =>
+        v.registration_number === vehicle.registration_number ? { ...v, status: 'On Trip' } : v
+      )
+    );
+    setDrivers(drivers.map((d) => (d.id === driver.id ? { ...d, status: 'On Trip' } : d)));
+
+    setInfoMsg(`Trip #${newTripId} successfully dispatched! Vehicle and Driver status set to On Trip.`);
+  };
+
+  const handleCompleteTrip = (tripId: number, finalOdometer: number, fuelConsumed: number) => {
+    setErrorMsg('');
+    setInfoMsg('');
+
+    const trip = trips.find((t) => t.id === tripId);
+    if (!trip) return;
+
+    const vehicle = vehicles.find((v) => v.registration_number === trip.vehicle_reg);
+    if (vehicle && finalOdometer <= vehicle.odometer) {
+      setErrorMsg(`Final odometer must be greater than current vehicle odometer (${vehicle.odometer} km).`);
+      return;
+    }
+
+    setTrips(
+      trips.map((t) =>
+        t.id === tripId
+          ? { ...t, status: 'Completed', final_odometer: finalOdometer, fuel_consumed: fuelConsumed }
+          : t
+      )
+    );
+    setVehicles(
+      vehicles.map((v) =>
+        v.registration_number === trip.vehicle_reg
+          ? { ...v, status: 'Available', odometer: finalOdometer }
+          : v
+      )
+    );
+    setDrivers(drivers.map((d) => (d.name === trip.driver_name ? { ...d, status: 'Available' } : d)));
+
+    setInfoMsg(`Trip #${tripId} completed. Vehicle odometer updated to ${finalOdometer} km.`);
+  };
+
+  const handleToggleDriverStatus = (id: number) => {
+    setErrorMsg('');
+    setInfoMsg('');
+
+    setDrivers(
+      drivers.map((d) => {
+        if (d.id === id) {
+          const nextStatus = d.status === 'Suspended' ? 'Available' : 'Suspended';
+          setInfoMsg(`Driver ${d.name} status updated to ${nextStatus}.`);
+          return { ...d, status: nextStatus };
+        }
+        return d;
+      })
+    );
+  };
+
+  const handleExport = () => {
+    setErrorMsg('');
+    setInfoMsg('');
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,Vehicle,Acquisition Cost,Maintenance,Fuel,Revenue,ROI\nVan-05,25000,150,120,450,0.007\nTruck-02,85000,490,1770,2300,-0.0004';
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'transitops_vehicle_roi.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setInfoMsg('ROI report exported to CSV successfully.');
+  };
 
   return (
-    <div className="space-y-8 font-sans">
-      {/* Welcome Banner */}
-      <div className="bg-white border border-gray-200 p-6 rounded-md">
-        <h2 className="text-2xl font-bold text-gray-900">Welcome back, {user.name}!</h2>
-        <p className="text-gray-500 mt-1">
-          You are currently logged in with the role of{' '}
-          <span className="font-semibold text-indigo-600">{user.role}</span>.
-        </p>
-        <p className="text-sm text-gray-400 mt-3">
-          Notice how the Sidebar items have adjusted. Depending on your role, you will only see the modules you are authorized to manage.
-        </p>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div>
-        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-          Fleet Performance Metrics
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {mockKpis.map((kpi) => (
-            <div
-              key={kpi.name}
-              className="bg-white border border-gray-200 p-6 rounded-md flex flex-col gap-1"
-            >
-              <span className="text-sm text-gray-500 font-medium">{kpi.name}</span>
-              <span className="text-3xl font-extrabold text-gray-900 tracking-tight">
-                {kpi.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Role Guide Info */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white border border-gray-200 p-6 rounded-md">
-          <h4 className="font-bold text-gray-900 mb-3">Your Role Capabilities:</h4>
-          <ul className="space-y-2 text-sm text-gray-600 list-disc list-inside">
-            {user.role === 'Fleet Manager' && (
-              <>
-                <li>Manage Vehicles (Register, edit registry)</li>
-                <li>Manage Drivers (Register, update safety scores)</li>
-                <li>Log Maintenance & toggle vehicle status</li>
-                <li>Review all Expenses & Fuel Logs</li>
-                <li>View Financial ROI Analytics</li>
-              </>
-            )}
-            {user.role === 'Driver' && (
-              <>
-                <li>Create and update trips (Draft, Dispatched)</li>
-                <li>Complete trips (Log final odometer & fuel)</li>
-                <li>View dashboard updates</li>
-              </>
-            )}
-            {user.role === 'Safety Officer' && (
-              <>
-                <li>Track driver license compliance and expirations</li>
-                <li>Monitor safety scores</li>
-                <li>Suspend/reactivate drivers</li>
-              </>
-            )}
-            {user.role === 'Financial Analyst' && (
-              <>
-                <li>Review operational expenses & fuel efficiency</li>
-                <li>Monitor ROI metrics</li>
-                <li>Export financial reports (CSV)</li>
-              </>
-            )}
-          </ul>
-        </div>
-
-        <div className="bg-white border border-gray-200 p-6 rounded-md flex flex-col justify-between">
+    <div className="space-y-8 font-sans text-gray-900 pb-12">
+      {/* Alert Notices */}
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 text-sm font-medium rounded flex items-start gap-2.5">
+          <span className="font-bold text-red-500">!</span>
           <div>
-            <h4 className="font-bold text-gray-900 mb-2">Simulate a Different Role</h4>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              If you want to test how the platform behaves for another department, click "Logout" at the top right, select a different role on the login screen, and log back in.
-            </p>
-          </div>
-          <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded text-indigo-700 text-xs font-semibold">
-            System running in development sandbox mode. Next.js router guards are active.
+            <p className="font-semibold">Business Rule Validation Failed</p>
+            <p className="mt-0.5 text-red-700">{errorMsg}</p>
           </div>
         </div>
+      )}
+      {infoMsg && (
+        <div className="p-4 bg-green-50 border border-green-200 text-green-800 text-sm font-medium rounded flex items-start gap-2.5">
+          <span className="text-green-500">✓</span>
+          <div>
+            <p className="font-semibold">Action Executed Successfully</p>
+            <p className="mt-0.5 text-green-700">{infoMsg}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Welcome Banner */}
+      <div className="bg-white border border-gray-200 p-6 rounded-md flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+          <p className="text-gray-500 mt-1">{DASHBOARD_TITLES.roleDescription(user.role)}</p>
+        </div>
+        <div className="px-3 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-bold text-gray-600 uppercase tracking-wider">
+          {user.role} View
+        </div>
       </div>
+
+      {/* Dynamic Role-Based Views */}
+      {user.role === 'Fleet Manager' && (
+        <FleetManagerDashboard vehicles={vehicles} drivers={drivers} />
+      )}
+      {user.role === 'Driver' && (
+        <DriverDashboard
+          vehicles={vehicles}
+          drivers={drivers}
+          trips={trips}
+          onCreateTrip={handleCreateTrip}
+          onCompleteTrip={handleCompleteTrip}
+        />
+      )}
+      {user.role === 'Safety Officer' && (
+        <SafetyOfficerDashboard drivers={drivers} onToggleDriverStatus={handleToggleDriverStatus} />
+      )}
+      {user.role === 'Financial Analyst' && (
+        <FinancialAnalystDashboard onExport={handleExport} />
+      )}
     </div>
   );
 }
