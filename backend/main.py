@@ -1,4 +1,4 @@
-"""TransitOps backend API (Authentication & Dashboard)."""
+"""TransitOps backend API (Authentication, Dashboard, and Vehicles)."""
 
 import os
 import sqlite3
@@ -9,7 +9,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, HTTPException, status, Query
+from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -90,6 +90,25 @@ class DashboardResponse(BaseModel):
     fleet_utilization_percentage: float
 
 
+class VehicleCreate(BaseModel):
+    registration_number: str
+    model: str
+    type: str
+    max_load_capacity: float
+    odometer: float
+    acquisition_cost: float
+
+
+class VehicleResponse(VehicleCreate):
+    status: str
+
+
+class VehicleRegistrationResponse(BaseModel):
+    registration_number: str
+    status: str
+    message: str
+
+
 @app.post("/api/auth/login", response_model=LoginResponse)
 def login(credentials: LoginRequest) -> LoginResponse:
     """Authenticate a user and issue an eight-hour JWT bearer token."""
@@ -103,10 +122,7 @@ def login(credentials: LoginRequest) -> LoginResponse:
         ).fetchone()
 
     if user is None or not bcrypt.checkpw(credentials.password.encode(), user["password_hash"].encode()):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     database_role = "Driver" if user["role"] == "Driver / Dispatcher" else user["role"]
     if database_role != credentials.role:
@@ -137,7 +153,6 @@ def get_dashboard(
         region = None
 
     with connection() as database:
-        # 1. Build and execute query for vehicles
         vehicle_conditions = ["status != 'Retired'"]
         vehicle_params = []
         if type and type.strip():
@@ -146,17 +161,14 @@ def get_dashboard(
 
         v_where = " WHERE " + " AND ".join(vehicle_conditions)
         v_rows = database.execute(
-            f"SELECT status, count(*) AS cnt FROM vehicles{v_where} GROUP BY status",
-            vehicle_params,
+            f"SELECT status, count(*) AS cnt FROM vehicles{v_where} GROUP BY status", vehicle_params
         ).fetchall()
         v_counts = {row["status"]: row["cnt"] for row in v_rows}
-
         total_vehicles = sum(v_counts.values())
         active_vehicles = v_counts.get("On Trip", 0)
         available_vehicles = v_counts.get("Available", 0)
         vehicles_in_shop = v_counts.get("In Shop", 0)
 
-        # 2. Build and execute query for trips
         trip_conditions = []
         trip_params = []
         if type and type.strip():
@@ -172,21 +184,18 @@ def get_dashboard(
 
         t_where = (" WHERE " + " AND ".join(trip_conditions)) if trip_conditions else ""
         t_rows = database.execute(
-            f"SELECT status, count(*) AS cnt FROM trips{t_where} GROUP BY status",
-            trip_params,
+            f"SELECT status, count(*) AS cnt FROM trips{t_where} GROUP BY status", trip_params
         ).fetchall()
         t_counts = {row["status"]: row["cnt"] for row in t_rows}
-
         active_trips = t_counts.get("Dispatched", 0)
         pending_trips = t_counts.get("Draft", 0)
 
-        # 3. Build and execute query for drivers
         driver_conditions = ["status != 'Suspended'"]
         driver_params = []
         if region and region.strip():
             driver_conditions.append(
                 """id IN (
-                    SELECT driver_id FROM trips 
+                    SELECT driver_id FROM trips
                     WHERE lower(source) LIKE '%' || lower(?) || '%' OR lower(destination) LIKE '%' || lower(?) || '%'
                 )"""
             )
@@ -194,32 +203,91 @@ def get_dashboard(
 
         d_where = " WHERE " + " AND ".join(driver_conditions)
         d_rows = database.execute(
-            f"SELECT status, count(*) AS cnt FROM drivers{d_where} GROUP BY status",
-            driver_params,
+            f"SELECT status, count(*) AS cnt FROM drivers{d_where} GROUP BY status", driver_params
         ).fetchall()
         d_counts = {row["status"]: row["cnt"] for row in d_rows}
-
         total_drivers = sum(d_counts.values())
         drivers_on_duty = d_counts.get("On Trip", 0)
         available_drivers = d_counts.get("Available", 0)
 
-        # 4. Calculate fleet utilization percentage
-        utilization = round((active_vehicles / total_vehicles) * 100.0, 1) if total_vehicles > 0 else 0.0
+    utilization = round((active_vehicles / total_vehicles) * 100.0, 1) if total_vehicles > 0 else 0.0
+    return DashboardResponse(
+        total_vehicles=total_vehicles,
+        active_vehicles=active_vehicles,
+        available_vehicles=available_vehicles,
+        vehicles_in_shop=vehicles_in_shop,
+        active_trips=active_trips,
+        pending_trips=pending_trips,
+        total_drivers=total_drivers,
+        drivers_on_duty=drivers_on_duty,
+        available_drivers=available_drivers,
+        fleet_utilization_percentage=utilization,
+    )
 
-        return DashboardResponse(
-            total_vehicles=total_vehicles,
-            active_vehicles=active_vehicles,
-            available_vehicles=available_vehicles,
-            vehicles_in_shop=vehicles_in_shop,
-            active_trips=active_trips,
-            pending_trips=pending_trips,
-            total_drivers=total_drivers,
-            drivers_on_duty=drivers_on_duty,
-            available_drivers=available_drivers,
-            fleet_utilization_percentage=utilization,
+
+@app.get("/api/vehicles", response_model=list[VehicleResponse])
+def list_vehicles(
+    status_filter: str | None = Query(default=None, alias="status"),
+    vehicle_type: str | None = Query(default=None, alias="type"),
+) -> list[dict]:
+    """List fleet vehicles, optionally filtered by status and type."""
+    query = """SELECT registration_number, model, type, max_load_capacity, odometer,
+                      acquisition_cost, status FROM vehicles"""
+    filters: list[str] = []
+    values: list[str] = []
+    if status_filter:
+        filters.append("status = ?")
+        values.append(status_filter)
+    if vehicle_type:
+        filters.append("type = ?")
+        values.append(vehicle_type)
+    if filters:
+        query += " WHERE " + " AND ".join(filters)
+    query += " ORDER BY registration_number"
+
+    with connection() as database:
+        rows = database.execute(query, values).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/vehicles", response_model=VehicleRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
+    """Register a vehicle with the default Available status."""
+    if vehicle.max_load_capacity <= 0 or vehicle.odometer < 0 or vehicle.acquisition_cost < 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Vehicle values are invalid")
+
+    registration_number = vehicle.registration_number.strip()
+    with connection() as database:
+        existing_vehicle = database.execute(
+            "SELECT 1 FROM vehicles WHERE registration_number = ?", (registration_number,)
+        ).fetchone()
+        if existing_vehicle:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Vehicle registration number must be unique",
+            )
+        database.execute(
+            """INSERT INTO vehicles
+               (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'Available')""",
+            (
+                registration_number,
+                vehicle.model.strip(),
+                vehicle.type.strip(),
+                vehicle.max_load_capacity,
+                vehicle.odometer,
+                vehicle.acquisition_cost,
+            ),
         )
+
+    return VehicleRegistrationResponse(
+        registration_number=registration_number,
+        status="Available",
+        message="Vehicle registered successfully",
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
