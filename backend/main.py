@@ -669,6 +669,62 @@ def get_analytics() -> AnalyticsResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# SETTINGS MODELS
+# ---------------------------------------------------------------------------
+class SettingsResponse(BaseModel):
+    depot_name: str
+    currency: str
+    distance_unit: str
+
+
+class SettingsUpdate(BaseModel):
+    depot_name: str
+    currency: str
+    distance_unit: str
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.get("/api/settings", response_model=SettingsResponse)
+def get_settings() -> SettingsResponse:
+    """Return the current global depot settings (singleton row id=1)."""
+    with connection() as database:
+        row = database.execute(
+            "SELECT depot_name, currency, distance_unit FROM settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Settings not found.")
+        return SettingsResponse(
+            depot_name=row["depot_name"],
+            currency=row["currency"],
+            distance_unit=row["distance_unit"],
+        )
+
+
+@app.post("/api/settings", response_model=SettingsResponse)
+def update_settings(payload: SettingsUpdate) -> SettingsResponse:
+    """Save depot settings. Upserts the singleton row (id=1)."""
+    with connection() as database:
+        database.execute(
+            """
+            INSERT INTO settings (id, depot_name, currency, distance_unit)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                depot_name    = excluded.depot_name,
+                currency      = excluded.currency,
+                distance_unit = excluded.distance_unit
+            """,
+            (payload.depot_name, payload.currency, payload.distance_unit),
+        )
+    return SettingsResponse(
+        depot_name=payload.depot_name,
+        currency=payload.currency,
+        distance_unit=payload.distance_unit,
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 

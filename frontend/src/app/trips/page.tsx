@@ -118,6 +118,13 @@ export default function TripManagementPage() {
 
   useEffect(() => {
     fetchRosterData();
+    // Prefill source with configured depot name from Settings
+    fetch('http://localhost:8000/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.depot_name) setSource(data.depot_name);
+      })
+      .catch(() => {}); // silently ignore — source remains empty placeholder
   }, []);
 
   // Sync default selection when trips list changes
