@@ -51,6 +51,12 @@ export default function DriverManagementPage() {
   const [safetyErrors, setSafetyErrors] = useState<Record<string, string>>({});
   const [isSubmittingSafety, setIsSubmittingSafety] = useState(false);
 
+  // --- Renew License Modal ---
+  const [renewTarget, setRenewTarget] = useState<Driver | null>(null);
+  const [renewDate, setRenewDate] = useState('');
+  const [renewError, setRenewError] = useState('');
+  const [isSubmittingRenew, setIsSubmittingRenew] = useState(false);
+
   // ---- Fetch drivers from backend ------------------------------------------
   const fetchDrivers = async () => {
     try {
@@ -78,14 +84,56 @@ export default function DriverManagementPage() {
     e.preventDefault();
     const errors: Record<string, string> = {};
 
-    if (!registerForm.name.trim()) errors.name = 'Full name is required.';
-    if (!registerForm.license_number.trim()) errors.license_number = 'License number is required.';
-    if (!registerForm.license_expiry_date) errors.license_expiry_date = 'Expiry date is required.';
-    if (!registerForm.contact_number.trim()) errors.contact_number = 'Contact number is required.';
-    const score = parseInt(registerForm.safety_score);
-    if (isNaN(score) || score < 0 || score > 100) errors.safety_score = 'Score must be 0–100.';
+    // 1. Name validation
+    const trimmedName = registerForm.name.trim();
+    if (!trimmedName) {
+      errors.name = 'Full name is required.';
+    } else if (trimmedName.length < 3) {
+      errors.name = 'Name must be at least 3 characters long.';
+    } else if (!/^[A-Za-z\s]+$/.test(trimmedName)) {
+      errors.name = 'Name can only contain letters and spaces.';
+    }
 
-    if (Object.keys(errors).length > 0) { setRegisterErrors(errors); return; }
+    // 2. License Number validation
+    const trimmedLicense = registerForm.license_number.trim();
+    if (!trimmedLicense) {
+      errors.license_number = 'License number is required.';
+    } else if (trimmedLicense.length < 5 || trimmedLicense.length > 25) {
+      errors.license_number = 'License number must be between 5 and 25 characters.';
+    } else if (!/^[A-Z0-9-\s]+$/i.test(trimmedLicense)) {
+      errors.license_number = 'License number must be alphanumeric (dashes/spaces allowed).';
+    }
+
+    // 3. Contact Number validation
+    const trimmedContact = registerForm.contact_number.trim();
+    if (!trimmedContact) {
+      errors.contact_number = 'Contact number is required.';
+    } else if (!/^\+?[\d\s-]{10,15}$/.test(trimmedContact)) {
+      errors.contact_number = 'Enter a valid phone number (10 to 15 digits).';
+    }
+
+    // 4. Expiry Date validation
+    if (!registerForm.license_expiry_date) {
+      errors.license_expiry_date = 'Expiry date is required.';
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const expiry = new Date(registerForm.license_expiry_date);
+      if (expiry <= today) {
+        errors.license_expiry_date = 'License has already expired. Expiry date must be in the future.';
+      }
+    }
+
+    // 5. Safety Score validation
+    const score = parseInt(registerForm.safety_score);
+    if (isNaN(score) || score < 0 || score > 100) {
+      errors.safety_score = 'Safety score must be between 0 and 100.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setRegisterErrors(errors);
+      return;
+    }
     setRegisterErrors({});
     setIsRegistering(true);
 
@@ -94,20 +142,34 @@ export default function DriverManagementPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: registerForm.name.trim(),
-          license_number: registerForm.license_number.trim().toUpperCase(),
+          name: trimmedName,
+          license_number: trimmedLicense.toUpperCase(),
           license_category: registerForm.license_category,
           license_expiry_date: registerForm.license_expiry_date,
-          contact_number: registerForm.contact_number.trim(),
+          contact_number: trimmedContact,
           safety_score: score,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Registration failed.');
+      if (!res.ok) {
+        // Map backend unique license check error to the input field
+        if (data.detail && data.detail.includes('exists')) {
+          setRegisterErrors({ license_number: data.detail });
+          return;
+        }
+        throw new Error(data.detail || 'Registration failed.');
+      }
 
-      showNotification('success', `Driver "${registerForm.name}" registered successfully.`);
+      showNotification('success', `Driver "${trimmedName}" registered successfully.`);
       setIsRegisterOpen(false);
-      setRegisterForm({ name: '', license_number: '', license_category: 'LMV', license_expiry_date: '', contact_number: '', safety_score: '100' });
+      setRegisterForm({
+        name: '',
+        license_number: '',
+        license_category: 'Class A CDL',
+        license_expiry_date: '',
+        contact_number: '',
+        safety_score: '100'
+      });
       fetchDrivers();
     } catch (err: any) {
       showNotification('error', err.message);
@@ -141,6 +203,43 @@ export default function DriverManagementPage() {
     }
   };
 
+  // ---- Renew License -------------------------------------------------------
+  const handleRenewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renewDate) {
+      setRenewError('Please select a valid expiry date.');
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = new Date(renewDate);
+    if (selected <= today) {
+      setRenewError('Expiry date must be in the future.');
+      return;
+    }
+
+    setRenewError('');
+    setIsSubmittingRenew(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/drivers/${renewTarget!.id}/renew`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ license_expiry_date: renewDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Renewal failed.');
+
+      showNotification('success', `License for ${renewTarget!.name} renewed successfully to ${renewDate}.`);
+      setRenewTarget(null);
+      setRenewDate('');
+      fetchDrivers();
+    } catch (err: any) {
+      setRenewError(err.message);
+    } finally {
+      setIsSubmittingRenew(false);
+    }
+  };
+
   // ---- Safety Event --------------------------------------------------------
   const handleSafetySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,10 +267,8 @@ export default function DriverManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to log safety event.');
 
-      // Immediately update the safety score in the local list
-      setDrivers(prev =>
-        prev.map(d => d.id === safetyTarget!.id ? { ...d, safety_score: data.safety_score } : d)
-      );
+      // Refresh driver list to update status if auto-suspended
+      fetchDrivers();
 
       const sign = pts > 0 ? '+' : '';
       showNotification('success',
@@ -184,6 +281,47 @@ export default function DriverManagementPage() {
     } finally {
       setIsSubmittingSafety(false);
     }
+  };
+
+  // Helper to check if a license is expired
+  const isLicenseExpired = (expiryDateStr: string) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const expiry = new Date(expiryDateStr);
+      return expiry <= today;
+    } catch {
+      return true;
+    }
+  };
+
+  // Helper to format today's date for datepicker constraint
+  const getTodayString = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Helper to calculate and display warning tags for expired or expiring licenses
+  const getExpiryWarning = (expiryDateStr: string) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const expiry = new Date(expiryDateStr);
+      const diffTime = expiry.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 0) {
+        return <span className="text-[10px] font-bold text-red-600 block mt-0.5">Expired</span>;
+      } else if (diffDays <= 30) {
+        return <span className="text-[10px] font-bold text-amber-600 block mt-0.5">Expiring in {diffDays}d</span>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
   };
 
   // ---- Filter --------------------------------------------------------------
@@ -278,7 +416,10 @@ export default function DriverManagementPage() {
                   <td className="py-3 font-semibold">{d.name}</td>
                   <td className="py-3 font-mono text-xs">{d.license_number}</td>
                   <td className="py-3">{d.license_category}</td>
-                  <td className="py-3 font-medium">{d.license_expiry_date}</td>
+                  <td className="py-3 font-medium">
+                    {d.license_expiry_date}
+                    {getExpiryWarning(d.license_expiry_date)}
+                  </td>
                   <td className="py-3 text-xs">{d.contact_number}</td>
 
                   {/* Safety Score with color + Log button */}
@@ -313,9 +454,39 @@ export default function DriverManagementPage() {
                   </td>
 
                   <td className="py-3 text-right">
-                    {d.status !== 'Suspended' ? (
+                    {d.status === 'On Trip' ? (
+                      <span
+                        title="Cannot suspend — driver is currently On Trip"
+                        className="text-[10px] font-bold px-2 py-1 rounded border border-amber-200 text-amber-600 bg-amber-50 cursor-not-allowed"
+                      >
+                        On Trip
+                      </span>
+                    ) : d.status !== 'Suspended' ? (
                       <Button variant="outline" size="sm" onClick={() => handleSuspend(d)}>
                         Suspend
+                      </Button>
+                    ) : isLicenseExpired(d.license_expiry_date) ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="bg-amber-500 hover:bg-amber-600 border-none"
+                        onClick={() => {
+                          setRenewTarget(d);
+                          setRenewDate('');
+                          setRenewError('');
+                        }}
+                      >
+                        Renew License
+                      </Button>
+                    ) : d.safety_score < 70 ? (
+                      <Button
+                        variant="success"
+                        size="sm"
+                        disabled
+                        className="opacity-50 cursor-not-allowed"
+                        title="Cannot activate — safety score is too low (< 70). Log positive safety events first."
+                      >
+                        Activate (Low Score)
                       </Button>
                     ) : (
                       <Button variant="success" size="sm" onClick={() => handleActivate(d)}>
@@ -366,6 +537,7 @@ export default function DriverManagementPage() {
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">License Expiry Date</label>
             <input
               type="date"
+              min={getTodayString()}
               value={registerForm.license_expiry_date}
               onChange={e => setRegisterForm(f => ({ ...f, license_expiry_date: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-200 text-sm rounded outline-none focus:border-indigo-500"
@@ -462,6 +634,43 @@ export default function DriverManagementPage() {
               {isSubmittingSafety ? 'Saving...' : 'Log Safety Event'}
             </Button>
             <Button variant="outline" type="button" className="flex-1" onClick={() => setSafetyTarget(null)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+      {/* ── Renew License Modal ────────────────────────────────────────── */}
+      <Modal
+        isOpen={renewTarget !== null}
+        onClose={() => setRenewTarget(null)}
+        title={`Renew License — ${renewTarget?.name ?? ''}`}
+      >
+        <p className="text-sm text-gray-500 mb-4">
+          Select a new future expiry date to renew the driver's license. If safety score is healthy (≥ 70), the driver will be automatically activated.
+        </p>
+
+        <form onSubmit={handleRenewSubmit} className="space-y-4">
+          {renewError && (
+            <p className="text-xs font-semibold text-red-600">{renewError}</p>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">New Expiry Date</label>
+            <input
+              type="date"
+              min={getTodayString()}
+              value={renewDate}
+              onChange={e => setRenewDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 text-sm rounded outline-none focus:border-indigo-500 bg-white"
+              required
+            />
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <Button type="submit" className="flex-1" disabled={isSubmittingRenew}>
+              {isSubmittingRenew ? 'Renewing...' : 'Renew & Activate'}
+            </Button>
+            <Button variant="outline" type="button" className="flex-1" onClick={() => setRenewTarget(null)}>
               Cancel
             </Button>
           </div>

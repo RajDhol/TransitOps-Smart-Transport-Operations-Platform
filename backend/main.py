@@ -432,13 +432,13 @@ def register_driver(driver: DriverCreate) -> DriverRegistrationResponse:
 
 @app.post("/api/drivers/{driver_id}/safety-events", response_model=SafetyEventResponse)
 def log_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEventResponse:
-    """Log a positive or negative safety event and update the driver's safety score."""
+    """Log a positive or negative safety event and update the driver's safety score. Auto-suspends if score < 70."""
     if event.points == 0 or not (-100 <= event.points <= 100):
         raise HTTPException(status_code=400, detail="Points must be between -100 and 100 and cannot be zero.")
     event_date = event.event_date or datetime.now(timezone.utc).date()
     with connection() as database:
         driver = database.execute(
-            "SELECT id, safety_score FROM drivers WHERE id = ?", (driver_id,)
+            "SELECT id, safety_score, status FROM drivers WHERE id = ?", (driver_id,)
         ).fetchone()
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found.")
@@ -451,6 +451,11 @@ def log_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEventRes
         database.execute(
             "UPDATE drivers SET safety_score = ? WHERE id = ?", (new_score, driver_id)
         )
+        # Auto-suspend if safety score drops below 70
+        if new_score < 70 and driver["status"] != "Suspended":
+            database.execute(
+                "UPDATE drivers SET status = 'Suspended' WHERE id = ?", (driver_id,)
+            )
     return SafetyEventResponse(
         id=cursor.lastrowid,
         driver_id=driver_id,
@@ -474,13 +479,73 @@ def suspend_driver(driver_id: int) -> dict:
     return {"driver_id": driver_id, "status": "Suspended"}
 
 
-@app.post("/api/drivers/{driver_id}/activate")
-def activate_driver(driver_id: int) -> dict:
-    """Reactivate a suspended driver."""
+class LicenseRenewRequest(BaseModel):
+    license_expiry_date: date
+
+
+@app.post("/api/drivers/{driver_id}/renew")
+def renew_driver_license(driver_id: int, payload: LicenseRenewRequest) -> dict:
+    """Renew a driver's license with a new expiry date and auto-activate if safety score is healthy."""
+    today = datetime.now(timezone.utc).date()
+    if payload.license_expiry_date <= today:
+        raise HTTPException(status_code=400, detail="New expiry date must be in the future.")
+
     with connection() as database:
-        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        driver = database.execute(
+            "SELECT id, safety_score, status FROM drivers WHERE id = ?", (driver_id,)
+        ).fetchone()
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found.")
+
+        # Update license expiry date
+        database.execute(
+            "UPDATE drivers SET license_expiry_date = ? WHERE id = ?",
+            (str(payload.license_expiry_date), driver_id)
+        )
+
+        # Auto-activate if safety score is >= 70
+        new_status = driver["status"]
+        if driver["safety_score"] >= 70:
+            database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (driver_id,))
+            new_status = "Available"
+
+    return {
+        "driver_id": driver_id,
+        "license_expiry_date": str(payload.license_expiry_date),
+        "status": new_status
+    }
+
+
+@app.post("/api/drivers/{driver_id}/activate")
+def activate_driver(driver_id: int) -> dict:
+    """Reactivate a suspended driver after verifying safety score and license status."""
+    with connection() as database:
+        driver = database.execute(
+            "SELECT id, status, safety_score, license_expiry_date FROM drivers WHERE id = ?",
+            (driver_id,)
+        ).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+
+        # Check safety score constraint
+        if driver["safety_score"] < 70:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot activate driver — safety score is too low ({driver['safety_score']}/100). Log positive safety events first."
+            )
+
+        # Check license expiry constraint
+        try:
+            license_expired = date.fromisoformat(driver["license_expiry_date"]) < datetime.now(timezone.utc).date()
+        except ValueError:
+            license_expired = True
+
+        if license_expired:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot activate driver — license has expired. Please renew the license first."
+            )
+
         database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (driver_id,))
     return {"driver_id": driver_id, "status": "Available"}
 
