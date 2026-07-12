@@ -459,14 +459,7 @@ export default function DashboardPage() {
         <SafetyOfficerDashboard drivers={drivers} onToggleDriverStatus={handleToggleDriverStatus} />
       )}
       {user.role === 'Financial Analyst' && (
-        <FinancialAnalystDashboard
-          totalOperationalCost={filteredTotalOperationalCost}
-          totalMaintenanceCost={filteredMaint}
-          totalFuelCost={filteredFuel}
-          performances={filteredPerformances}
-          currencySymbol={currencySymbol}
-          onExport={handleExport}
-        />
+        <FinancialAnalystDashboard onExport={handleExport} />
       )}
     </div>
   );

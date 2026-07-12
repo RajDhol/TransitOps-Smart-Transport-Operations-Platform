@@ -201,6 +201,7 @@ class VehiclePerformanceResponse(BaseModel):
     acquisition_cost: float
     maintenance_cost: float
     fuel_cost: float
+    expense_cost: float
     revenue: float
     distance_driven: float
     fuel_consumed: float
@@ -886,16 +887,7 @@ def complete_maintenance_record(maintenance_id: int) -> MaintenanceCompleteRespo
     )
 
 
-class VehiclePerformanceResponse(BaseModel):
-    registration_number: str
-    model: str
-    acquisition_cost: float
-    maintenance_cost: float
-    fuel_cost: float
-    expense_cost: float
-    revenue: float
-    distance_driven: float
-    fuel_consumed: float
+
 
 
 @app.get("/api/reports/performance", response_model=list[VehiclePerformanceResponse])
@@ -967,6 +959,7 @@ def get_analytics() -> AnalyticsResponse:
                 acquisition_cost=acq_cost,
                 maintenance_cost=m_cost,
                 fuel_cost=f_cost,
+                expense_cost=e_cost,
                 revenue=rev,
                 distance_driven=dist,
                 fuel_consumed=fuel
