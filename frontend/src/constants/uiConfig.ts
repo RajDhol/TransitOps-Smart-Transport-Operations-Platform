@@ -52,6 +52,6 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   {
     name: 'Settings',
     href: '/settings',
-    allowedRoles: ['Fleet Manager', 'Driver', 'Safety Officer', 'Financial Analyst'],
+    allowedRoles: ['Fleet Manager'],
   },
 ];

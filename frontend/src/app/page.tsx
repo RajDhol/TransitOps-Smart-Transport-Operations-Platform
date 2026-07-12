@@ -28,6 +28,13 @@ export default function DashboardPage() {
   const [trips, setTrips] = useState<MockTrip[]>(INITIAL_TRIPS);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
 
+  // Financial reports and currency states
+  const [performances, setPerformances] = useState<any[]>([]);
+  const [totalOperationalCost, setTotalOperationalCost] = useState(0);
+  const [totalMaintenanceCost, setTotalMaintenanceCost] = useState(0);
+  const [totalFuelCost, setTotalFuelCost] = useState(0);
+  const [currencySymbol, setCurrencySymbol] = useState('Rs. ');
+
   // Filter States
   const [selectedType, setSelectedType] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
@@ -39,10 +46,13 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const [vRes, dRes, tRes] = await Promise.all([
+      const [vRes, dRes, tRes, pRes, aRes, sRes] = await Promise.all([
         fetch('http://localhost:8000/api/vehicles'),
         fetch('http://localhost:8000/api/drivers'),
-        fetch('http://localhost:8000/api/trips')
+        fetch('http://localhost:8000/api/trips'),
+        fetch('http://localhost:8000/api/reports/performance'),
+        fetch('http://localhost:8000/api/reports/analytics'),
+        fetch('http://localhost:8000/api/settings')
       ]);
 
       if (vRes.ok) {
@@ -82,6 +92,22 @@ export default function DashboardPage() {
         const tData = await tRes.json();
         setTrips(tData);
       }
+
+      if (pRes.ok) {
+        setPerformances(await pRes.json());
+      }
+
+      if (aRes.ok) {
+        const aData = await aRes.json();
+        setTotalOperationalCost(aData.total_operational_cost);
+        setTotalMaintenanceCost(aData.total_maintenance_cost);
+        setTotalFuelCost(aData.total_fuel_cost);
+      }
+
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setCurrencySymbol(sData.currency?.includes('INR') ? 'Rs. ' : '$');
+      }
     } catch (err) {
       console.error('Failed to load dashboard lists:', err);
     }
@@ -114,6 +140,19 @@ export default function DashboardPage() {
     const matchesRegion = !selectedRegion || v.region === selectedRegion;
     return matchesType && matchesStatus && matchesRegion;
   });
+
+  const filteredPerformances = performances.filter((p) => {
+    const v = vehicles.find(veh => veh.registration_number === p.registration_number);
+    if (!v) return true;
+    const matchesType = !selectedType || v.type === selectedType;
+    const matchesRegion = !selectedRegion || v.region === selectedRegion;
+    return matchesType && matchesRegion;
+  });
+
+  const filteredMaint = filteredPerformances.reduce((sum, p) => sum + p.maintenance_cost, 0);
+  const filteredFuel = filteredPerformances.reduce((sum, p) => sum + p.fuel_cost, 0);
+  const filteredExpenses = filteredPerformances.reduce((sum, p) => sum + p.expense_cost, 0);
+  const filteredTotalOperationalCost = filteredMaint + filteredFuel + filteredExpenses;
 
   // --- ACTIONS & VALIDATIONS ---
   const handleCreateTrip = async (tripForm: {
@@ -304,6 +343,7 @@ export default function DashboardPage() {
 
       {/* Filter Component */}
       <DashboardFilters
+        vehicles={vehicles}
         selectedType={selectedType}
         setSelectedType={setSelectedType}
         selectedStatus={selectedStatus}
@@ -378,6 +418,32 @@ export default function DashboardPage() {
               setErrorMsg(err.message || 'Failed to register driver.');
             }
           }}
+          onLogMaintenance={async (reg, serviceDate, cost, desc) => {
+            setErrorMsg('');
+            setInfoMsg('');
+            try {
+              const res = await fetch('http://localhost:8000/api/maintenance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  vehicle_reg: reg,
+                  service_date: serviceDate,
+                  cost: cost,
+                  description: desc,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                throw new Error(data.detail || 'Failed to log maintenance ticket.');
+              }
+              await fetchDashboardData();
+              const statsData = await getDashboardStats(selectedType, selectedRegion);
+              setDashboardStats(statsData);
+              setInfoMsg(`Maintenance ticket #${data.maintenance_id} successfully created. Vehicle ${reg} status set to In Shop.`);
+            } catch (err: any) {
+              setErrorMsg(err.message || 'Failed to log maintenance.');
+            }
+          }}
         />
       )}
       {user.role === 'Driver' && (
@@ -393,7 +459,14 @@ export default function DashboardPage() {
         <SafetyOfficerDashboard drivers={drivers} onToggleDriverStatus={handleToggleDriverStatus} />
       )}
       {user.role === 'Financial Analyst' && (
-        <FinancialAnalystDashboard onExport={handleExport} />
+        <FinancialAnalystDashboard
+          totalOperationalCost={filteredTotalOperationalCost}
+          totalMaintenanceCost={filteredMaint}
+          totalFuelCost={filteredFuel}
+          performances={filteredPerformances}
+          currencySymbol={currencySymbol}
+          onExport={handleExport}
+        />
       )}
     </div>
   );

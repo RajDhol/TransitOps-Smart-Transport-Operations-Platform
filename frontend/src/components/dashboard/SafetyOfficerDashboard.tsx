@@ -12,19 +12,58 @@ interface SafetyOfficerDashboardProps {
 }
 
 export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }: SafetyOfficerDashboardProps) {
+  // Helpers to calculate dynamic alerts
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const complianceAlerts = drivers.reduce((acc: React.ReactNode[], d) => {
+    // 1. License Expiry Check
+    if (d.license_expiry) {
+      const expiry = new Date(d.license_expiry);
+      if (expiry <= today) {
+        acc.push(
+          <div key={`exp-${d.id}`} className="p-4 bg-red-50 border border-red-200 text-red-800 text-xs font-semibold rounded flex items-center justify-between">
+            <span>❌ Driver <strong>{d.name}</strong> license expired on {d.license_expiry}. Fleet routing blocked.</span>
+            <Badge color="error">Critical Expiry</Badge>
+          </div>
+        );
+      } else {
+        const diffTime = expiry.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays <= 30) {
+          acc.push(
+            <div key={`warn-${d.id}`} className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded flex items-center justify-between">
+              <span>⚠️ Driver <strong>{d.name}</strong> license expires in {diffDays} days ({d.license_expiry}).</span>
+              <Badge color="warning">Action Required</Badge>
+            </div>
+          );
+        }
+      }
+    }
+
+    // 2. Safety Score Critical Alert Check
+    if (d.safety_score < 70) {
+      acc.push(
+        <div key={`score-${d.id}`} className="p-4 bg-red-50 border border-red-200 text-red-800 text-xs font-semibold rounded flex items-center justify-between">
+          <span>❌ Driver <strong>{d.name}</strong> safety score is at {d.safety_score} (Below critical threshold limit of 70). Status Suspended.</span>
+          <Badge color="error">Suspension Guard</Badge>
+        </div>
+      );
+    }
+
+    return acc;
+  }, []);
+
   return (
     <div className="space-y-8 font-sans">
       {/* Compliance cards */}
       <Card title="Compliance Alerts & Warnings">
         <div className="space-y-3">
-          <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded flex items-center justify-between">
-            <span>⚠️ Driver <strong>David</strong> license expires on 2026-05-10. Status has been flagged.</span>
-            <Badge color="warning">Action Required</Badge>
-          </div>
-          <div className="p-4 bg-red-50 border border-red-200 text-red-800 text-xs font-semibold rounded flex items-center justify-between">
-            <span>❌ Driver <strong>Michael</strong> safety score is at 74 (Below threshold limit of 75).</span>
-            <Badge color="error">Risk Factor</Badge>
-          </div>
+          {complianceAlerts.length === 0 ? (
+            <p className="text-sm text-gray-400 py-2">✓ All driver licenses and safety scores are in healthy status.</p>
+          ) : (
+            complianceAlerts
+          )}
         </div>
       </Card>
 
@@ -46,8 +85,8 @@ export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }
                   <td className="py-3">{d.license_expiry}</td>
                   <td className="py-3">
                     <span className={`font-bold ${
-                      d.safety_score >= 90 ? 'text-green-600' :
-                      d.safety_score >= 75 ? 'text-amber-600' : 'text-red-600'
+                      d.safety_score >= 85 ? 'text-green-600' :
+                      d.safety_score >= 70 ? 'text-amber-600' : 'text-red-600'
                     }`}>
                       {d.safety_score} / 100
                     </span>
@@ -62,13 +101,17 @@ export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }
                     </Badge>
                   </td>
                   <td className="py-3 text-right">
-                    <Button
-                      variant={d.status === 'Suspended' ? 'primary' : 'danger'}
-                      size="sm"
-                      onClick={() => onToggleDriverStatus(d.id)}
-                    >
-                      {d.status === 'Suspended' ? 'Reactivate' : 'Suspend'}
-                    </Button>
+                    {d.status === 'On Trip' ? (
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded">On Trip</span>
+                    ) : (
+                      <Button
+                        variant={d.status === 'Suspended' ? 'primary' : 'danger'}
+                        size="sm"
+                        onClick={() => onToggleDriverStatus(d.id)}
+                      >
+                        {d.status === 'Suspended' ? 'Reactivate' : 'Suspend'}
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
