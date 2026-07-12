@@ -16,6 +16,9 @@ export interface MockDriver {
   license_expiry: string;
   safety_score: number;
   status: 'Available' | 'On Trip' | 'Off Duty' | 'Suspended';
+  license_number?: string;
+  license_category?: string;
+  contact_number?: string;
 }
 
 export interface MockTrip {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -10,37 +10,26 @@ interface ModalProps {
 }
 
 export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
-  const [animate, setAnimate] = useState(false);
-
-  // Trigger micro-animation on mount/unmount
+  // Prevent background scroll when modal is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      // Small delay to trigger animation transition
-      const timer = setTimeout(() => setAnimate(true), 20);
-      return () => clearTimeout(timer);
     } else {
-      setAnimate(false);
       document.body.style.overflow = 'unset';
     }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/50 backdrop-blur-md transition-opacity duration-300 font-sans ${
-        animate ? 'opacity-100' : 'opacity-0'
-      }`}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm font-sans">
       {/* Modal Container: Accent border top, solid border, zero shadows */}
-      <div
-        className={`w-full max-w-lg bg-white border border-gray-300 border-t-4 border-t-indigo-600 rounded-md flex flex-col max-h-[90vh] transition-all duration-300 transform ${
-          animate ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'
-        }`}
-      >
+      <div className="w-full max-w-lg bg-white border border-gray-300 border-t-4 border-t-indigo-600 rounded-md flex flex-col max-h-[90vh]">
         {/* Header Section */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-150 bg-gray-50/50">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-250 bg-gray-50/50">
           <h3 className="text-lg font-bold text-gray-900 tracking-tight">{title}</h3>
           
           {/* Close button with circular layout */}

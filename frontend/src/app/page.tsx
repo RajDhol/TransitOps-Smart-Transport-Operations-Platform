@@ -233,6 +233,10 @@ export default function DashboardPage() {
             setVehicles([newVehicle, ...vehicles]);
             setInfoMsg(`Vehicle ${newVehicle.registration_number} registered successfully!`);
           }}
+          onRegisterDriver={(newDriver) => {
+            setDrivers([...drivers, newDriver]);
+            setInfoMsg(`Driver ${newDriver.name} added successfully!`);
+          }}
         />
       )}
       {user.role === 'Driver' && (
