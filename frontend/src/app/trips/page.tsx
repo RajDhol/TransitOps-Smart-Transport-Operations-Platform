@@ -53,8 +53,8 @@ export default function TripManagementPage() {
   const [destination, setDestination] = useState('');
   const [selectedReg, setSelectedReg] = useState('');
   const [selectedDriverId, setSelectedDriverId] = useState('');
-  const [cargoWeight, setCargoWeight] = useState('700'); // Triggers capacity alert by default
-  const [plannedDistance, setPlannedDistance] = useState('38');
+  const [cargoWeight, setCargoWeight] = useState('');
+  const [plannedDistance, setPlannedDistance] = useState('');
 
   // Modal complete states
   const [activeCompleteTripId, setActiveCompleteTripId] = useState<string | null>(null);
