@@ -1,11 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  SETTINGS_TITLES,
-  RBAC_HEADERS,
-  RBAC_MATRIX
-} from '../../constants/settingsContent';
+import { SETTINGS_TITLES, RBAC_HEADERS } from '../../constants/settingsContent';
+import { NAVIGATION_ITEMS, USER_ROLES } from '../../constants/uiConfig';
 
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -24,6 +21,23 @@ export default function SettingsPage() {
     e.preventDefault();
     setSuccessMsg('General configurations saved successfully!');
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  // --- DYNAMIC RBAC RESOLVER FROM UICONFIG ---
+  const getPermissionStatus = (role: string, targetPath: string) => {
+    // Find the matching menu item from centralized uiConfig
+    const item = NAVIGATION_ITEMS.find((nav) => nav.href === targetPath);
+    if (!item) return '—';
+
+    const hasAccess = item.allowedRoles.includes(role as any);
+    if (!hasAccess) return '—';
+
+    // UI Customization: Match visual 'View' label cues from the mockup design
+    if (role === 'Driver' && targetPath === '/vehicles') return 'View';
+    if (role === 'Safety Officer' && targetPath === '/trips') return 'View';
+    if (role === 'Financial Analyst' && targetPath === '/vehicles') return 'View';
+
+    return '✓';
   };
 
   return (
@@ -72,7 +86,6 @@ export default function SettingsPage() {
               required
             />
             
-            {/* Custom blue save button to match the mockup */}
             <div className="pt-2">
               <Button type="submit">
                 {SETTINGS_TITLES.saveButton}
@@ -81,7 +94,7 @@ export default function SettingsPage() {
           </form>
         </Card>
 
-        {/* RBAC matrix card */}
+        {/* Dynamic RBAC matrix card */}
         <Card className="lg:col-span-7 w-full" title={SETTINGS_TITLES.rbacTitle}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -95,36 +108,31 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {RBAC_MATRIX.map((row) => (
-                  <tr key={row.role} className="text-gray-700">
-                    <td className="py-4 font-bold text-gray-900">{row.role}</td>
-                    <td className="py-4">
-                      <span className={row.fleet === '✓' ? 'text-green-600 font-bold' : row.fleet === 'View' ? 'text-indigo-500 font-semibold' : 'text-gray-400'}>
-                        {row.fleet}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <span className={row.drivers === '✓' ? 'text-green-600 font-bold' : row.drivers === 'View' ? 'text-indigo-500 font-semibold' : 'text-gray-400'}>
-                        {row.drivers}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <span className={row.trips === '✓' ? 'text-green-600 font-bold' : row.trips === 'View' ? 'text-indigo-500 font-semibold' : 'text-gray-400'}>
-                        {row.trips}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <span className={row.fuelExp === '✓' ? 'text-green-600 font-bold' : row.fuelExp === 'View' ? 'text-indigo-500 font-semibold' : 'text-gray-400'}>
-                        {row.fuelExp}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <span className={row.analytics === '✓' ? 'text-green-600 font-bold' : row.analytics === 'View' ? 'text-indigo-500 font-semibold' : 'text-gray-400'}>
-                        {row.analytics}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {USER_ROLES.map((role) => {
+                  // Map display names to match standard labels
+                  const displayRole = role === 'Driver' ? 'Dispatcher (Driver)' : role;
+
+                  return (
+                    <tr key={role} className="text-gray-700">
+                      <td className="py-4 font-bold text-gray-900">{displayRole}</td>
+                      <td className="py-4">
+                        <span className="font-semibold">{getPermissionStatus(role, '/vehicles')}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="font-semibold">{getPermissionStatus(role, '/drivers')}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="font-semibold">{getPermissionStatus(role, '/trips')}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="font-semibold">{getPermissionStatus(role, '/expenses')}</span>
+                      </td>
+                      <td className="py-4">
+                        <span className="font-semibold">{getPermissionStatus(role, '/reports')}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
