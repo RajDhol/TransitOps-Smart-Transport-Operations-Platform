@@ -145,7 +145,7 @@ export default function LoginPage() {
 
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-                Assign System Role (Mock Login)
+                Select Authentication Role
               </label>
               <select
                 value={role}
