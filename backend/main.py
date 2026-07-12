@@ -31,6 +31,7 @@ app.add_middleware(
 class LoginRequest(BaseModel):
     email: str
     password: str
+    role: str
 
 
 class UserResponse(BaseModel):
@@ -86,6 +87,13 @@ def login(credentials: LoginRequest) -> LoginResponse:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+
+    database_role = "Driver" if user["role"] == "Driver / Dispatcher" else user["role"]
+    if database_role != credentials.role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This account belongs to the '{database_role}' role. Please choose your correct role.",
         )
 
     response_user = UserResponse(id=user["id"], name=user["name"], email=user["email"], role=user["role"])
