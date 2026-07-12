@@ -470,7 +470,7 @@ def list_drivers() -> list[dict]:
         rows = database.execute(
             """SELECT id, name, license_number, license_category,
                       license_expiry_date, contact_number, safety_score, status
-               FROM drivers ORDER BY name ASC"""
+               FROM drivers ORDER BY id DESC"""
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -755,7 +755,7 @@ def list_drivers() -> list[dict]:
     with connection() as database:
         rows = database.execute(
             """SELECT id, name, license_number, license_category, license_expiry_date,
-                      contact_number, safety_score, status FROM drivers ORDER BY name ASC"""
+                      contact_number, safety_score, status FROM drivers ORDER BY id DESC"""
         ).fetchall()
     return [dict(row) for row in rows]
 

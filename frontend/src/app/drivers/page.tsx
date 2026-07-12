@@ -37,7 +37,7 @@ export default function DriverManagementPage() {
   // Search / filter / sort
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'score-desc' | 'score-asc'>('name-desc');
+  const [sortBy, setSortBy] = useState<'id-desc' | 'id-asc' | 'name-asc' | 'name-desc' | 'score-desc' | 'score-asc'>('id-desc');
 
   // Reset page number when filters/sorting change
   useEffect(() => {
@@ -345,6 +345,12 @@ export default function DriverManagementPage() {
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
+      if (sortBy === 'id-desc') {
+        return b.id - a.id;
+      }
+      if (sortBy === 'id-asc') {
+        return a.id - b.id;
+      }
       if (sortBy === 'name-asc') {
         return a.name.localeCompare(b.name);
       }
@@ -417,6 +423,8 @@ export default function DriverManagementPage() {
               onChange={e => setSortBy(e.target.value as any)}
               className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white text-gray-700 font-sans"
             >
+              <option value="id-desc">Sort: ID (High to Low)</option>
+              <option value="id-asc">Sort: ID (Low to High)</option>
               <option value="name-desc">Sort: Name (Z to A)</option>
               <option value="name-asc">Sort: Name (A to Z)</option>
               <option value="score-desc">Sort: Safety (High to Low)</option>
