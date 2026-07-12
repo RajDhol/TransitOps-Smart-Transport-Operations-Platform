@@ -390,6 +390,101 @@ def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# DRIVER ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.get("/api/drivers", response_model=list[DriverResponse])
+def list_drivers() -> list[dict]:
+    """List all registered drivers."""
+    with connection() as database:
+        rows = database.execute(
+            """SELECT id, name, license_number, license_category,
+                      license_expiry_date, contact_number, safety_score, status
+               FROM drivers ORDER BY id DESC"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/drivers", response_model=DriverRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_driver(driver: DriverCreate) -> DriverRegistrationResponse:
+    """Register a new driver with default status Available."""
+    with connection() as database:
+        exists = database.execute(
+            "SELECT 1 FROM drivers WHERE license_number = ?", (driver.license_number.strip(),)
+        ).fetchone()
+        if exists:
+            raise HTTPException(status_code=400, detail="A driver with this license number already exists.")
+        cursor = database.execute(
+            """INSERT INTO drivers (name, license_number, license_category, license_expiry_date,
+                                    contact_number, safety_score, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'Available')""",
+            (
+                driver.name.strip(),
+                driver.license_number.strip().upper(),
+                driver.license_category.strip(),
+                str(driver.license_expiry_date),
+                driver.contact_number.strip(),
+                max(0, min(100, driver.safety_score)),
+            ),
+        )
+    return DriverRegistrationResponse(id=cursor.lastrowid, name=driver.name.strip(), status="Available")
+
+
+@app.post("/api/drivers/{driver_id}/safety-events", response_model=SafetyEventResponse)
+def log_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEventResponse:
+    """Log a positive or negative safety event and update the driver's safety score."""
+    if event.points == 0 or not (-100 <= event.points <= 100):
+        raise HTTPException(status_code=400, detail="Points must be between -100 and 100 and cannot be zero.")
+    event_date = event.event_date or datetime.now(timezone.utc).date()
+    with connection() as database:
+        driver = database.execute(
+            "SELECT id, safety_score FROM drivers WHERE id = ?", (driver_id,)
+        ).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        new_score = max(0, min(100, driver["safety_score"] + event.points))
+        cursor = database.execute(
+            """INSERT INTO driver_safety_events (driver_id, event_type, points, notes, event_date)
+               VALUES (?, ?, ?, ?, ?)""",
+            (driver_id, event.event_type.strip(), event.points, event.notes, str(event_date)),
+        )
+        database.execute(
+            "UPDATE drivers SET safety_score = ? WHERE id = ?", (new_score, driver_id)
+        )
+    return SafetyEventResponse(
+        id=cursor.lastrowid,
+        driver_id=driver_id,
+        event_type=event.event_type.strip(),
+        points=event.points,
+        safety_score=new_score,
+        event_date=event_date,
+    )
+
+
+@app.post("/api/drivers/{driver_id}/suspend")
+def suspend_driver(driver_id: int) -> dict:
+    """Suspend a driver — blocks them from being dispatched."""
+    with connection() as database:
+        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        if driver["status"] == "On Trip":
+            raise HTTPException(status_code=400, detail="Cannot suspend a driver currently On Trip.")
+        database.execute("UPDATE drivers SET status = 'Suspended' WHERE id = ?", (driver_id,))
+    return {"driver_id": driver_id, "status": "Suspended"}
+
+
+@app.post("/api/drivers/{driver_id}/activate")
+def activate_driver(driver_id: int) -> dict:
+    """Reactivate a suspended driver."""
+    with connection() as database:
+        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (driver_id,))
+    return {"driver_id": driver_id, "status": "Available"}
+
+
 @app.post("/api/trips", response_model=TripCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
     """Create a draft trip after validating vehicle load capacity."""
