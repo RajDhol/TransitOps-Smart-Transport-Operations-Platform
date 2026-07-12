@@ -359,7 +359,7 @@ def list_vehicles(
         values.append(vehicle_type)
     if filters:
         query += " WHERE " + " AND ".join(filters)
-    query += " ORDER BY registration_number"
+    query += " ORDER BY rowid DESC"
 
     with connection() as database:
         rows = database.execute(query, values).fetchall()
@@ -458,7 +458,7 @@ def list_drivers() -> list[dict]:
         rows = database.execute(
             """SELECT id, name, license_number, license_category,
                       license_expiry_date, contact_number, safety_score, status
-               FROM drivers ORDER BY id DESC"""
+               FROM drivers ORDER BY name ASC"""
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -743,7 +743,7 @@ def list_drivers() -> list[dict]:
     with connection() as database:
         rows = database.execute(
             """SELECT id, name, license_number, license_category, license_expiry_date,
-                      contact_number, safety_score, status FROM drivers ORDER BY id"""
+                      contact_number, safety_score, status FROM drivers ORDER BY name ASC"""
         ).fetchall()
     return [dict(row) for row in rows]
 

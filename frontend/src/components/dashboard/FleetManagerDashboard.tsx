@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MockVehicle, MockDriver, TABLE_HEADERS } from '../../constants/dashboardContent';
 import { VEHICLE_PAGE_TITLES, VEHICLE_FORM_SCHEMA } from '../../constants/vehicleContent';
 import { DRIVER_PAGE_TITLES, DRIVER_FORM_SCHEMA } from '../../constants/driverContent';
@@ -10,6 +10,7 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../ui/DynamicForm';
+import Pagination from '../ui/Pagination';
 
 interface FleetManagerDashboardProps {
   vehicles: MockVehicle[];
@@ -29,6 +30,20 @@ export default function FleetManagerDashboard({
   // Modal states: 'vehicle' | 'driver' | 'maintenance' | null
   const [activeForm, setActiveForm] = useState<'vehicle' | 'driver' | 'maintenance' | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Pagination State for Vehicles
+  const [vehiclePage, setVehiclePage] = useState(1);
+  const VEHICLES_PER_PAGE = 5;
+
+  const totalPages = Math.ceil(vehicles.length / VEHICLES_PER_PAGE);
+  const paginatedVehicles = vehicles.slice(
+    (vehiclePage - 1) * VEHICLES_PER_PAGE,
+    vehiclePage * VEHICLES_PER_PAGE
+  );
+
+  useEffect(() => {
+    setVehiclePage(1);
+  }, [vehicles.length]);
 
   const stats = [
     { label: 'Total Vehicles', value: statsProps ? statsProps.total_vehicles : vehicles.length },
@@ -118,7 +133,8 @@ export default function FleetManagerDashboard({
         odometer: odo,
         status: formData.status as any,
         region: formData.region,
-      });
+        acquisition_cost: cost,
+      } as any);
 
     } else if (activeForm === 'driver') {
       // 2. Driver validation checks
@@ -258,7 +274,7 @@ export default function FleetManagerDashboard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {vehicles.map((v) => (
+                {paginatedVehicles.map((v) => (
                   <tr key={v.registration_number} className="text-gray-700">
                     <td className="py-3 font-semibold">{v.registration_number}</td>
                     <td className="py-3">{v.model}</td>
@@ -282,6 +298,13 @@ export default function FleetManagerDashboard({
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={vehiclePage}
+            totalPages={totalPages}
+            onPageChange={setVehiclePage}
+            totalItems={vehicles.length}
+            itemsPerPage={VEHICLES_PER_PAGE}
+          />
         </Card>
 
         {/* Action shortcut panel */}

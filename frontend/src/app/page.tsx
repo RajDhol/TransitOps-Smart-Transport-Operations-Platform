@@ -37,6 +37,60 @@ export default function DashboardPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
+  const fetchDashboardData = async () => {
+    try {
+      const [vRes, dRes, tRes] = await Promise.all([
+        fetch('http://localhost:8000/api/vehicles'),
+        fetch('http://localhost:8000/api/drivers'),
+        fetch('http://localhost:8000/api/trips')
+      ]);
+
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        const mappedVehicles = vData.map((v: any) => {
+          const parts = v.registration_number.split('-');
+          const region = parts.length > 2 ? parts[parts.length - 1] : 'GJ';
+          return {
+            registration_number: v.registration_number,
+            model: v.model,
+            type: v.type,
+            max_capacity: v.max_load_capacity,
+            odometer: v.odometer,
+            status: v.status,
+            region: region
+          };
+        });
+        setVehicles(mappedVehicles);
+      }
+
+      if (dRes.ok) {
+        const dData = await dRes.json();
+        const mappedDrivers = dData.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          license_expiry: d.license_expiry_date,
+          safety_score: d.safety_score,
+          status: d.status,
+          license_number: d.license_number,
+          license_category: d.license_category,
+          contact_number: d.contact_number
+        }));
+        setDrivers(mappedDrivers);
+      }
+
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        setTrips(tData);
+      }
+    } catch (err) {
+      console.error('Failed to load dashboard lists:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
   useEffect(() => {
     if (user?.role !== 'Fleet Manager') return;
 
@@ -62,7 +116,7 @@ export default function DashboardPage() {
   });
 
   // --- ACTIONS & VALIDATIONS ---
-  const handleCreateTrip = (tripForm: {
+  const handleCreateTrip = async (tripForm: {
     source: string;
     destination: string;
     vehicle_reg: string;
@@ -108,31 +162,42 @@ export default function DashboardPage() {
       return;
     }
 
-    // Success State Transition
-    const newTripId = trips.length + 101;
-    const addedTrip: MockTrip = {
-      id: newTripId,
-      source: tripForm.source,
-      destination: tripForm.destination,
-      vehicle_reg: vehicle.registration_number,
-      driver_name: driver.name,
-      cargo_weight: cargo,
-      planned_distance: distance,
-      status: 'Dispatched',
-    };
+    try {
+      const createRes = await fetch('http://localhost:8000/api/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: tripForm.source,
+          destination: tripForm.destination,
+          vehicle_reg: vehicle.registration_number,
+          driver_id: driver.id,
+          cargo_weight: cargo,
+          planned_distance: distance,
+        }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) {
+        throw new Error(createData.detail || 'Failed to create trip.');
+      }
 
-    setTrips([...trips, addedTrip]);
-    setVehicles(
-      vehicles.map((v) =>
-        v.registration_number === vehicle.registration_number ? { ...v, status: 'On Trip' } : v
-      )
-    );
-    setDrivers(drivers.map((d) => (d.id === driver.id ? { ...d, status: 'On Trip' } : d)));
+      const dispatchRes = await fetch(`http://localhost:8000/api/trips/${createData.trip_id}/dispatch`, {
+        method: 'POST',
+      });
+      const dispatchData = await dispatchRes.json();
+      if (!dispatchRes.ok) {
+        throw new Error(dispatchData.detail || 'Failed to dispatch trip.');
+      }
 
-    setInfoMsg(`Trip #${newTripId} successfully dispatched! Vehicle and Driver status set to On Trip.`);
+      await fetchDashboardData();
+      const statsData = await getDashboardStats(selectedType, selectedRegion);
+      setDashboardStats(statsData);
+      setInfoMsg(`Trip #${createData.trip_id} successfully dispatched! Vehicle and Driver status set to On Trip.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to dispatch trip.');
+    }
   };
 
-  const handleCompleteTrip = (tripId: number, finalOdometer: number, fuelConsumed: number) => {
+  const handleCompleteTrip = async (tripId: number, finalOdometer: number, fuelConsumed: number) => {
     setErrorMsg('');
     setInfoMsg('');
 
@@ -145,39 +210,57 @@ export default function DashboardPage() {
       return;
     }
 
-    setTrips(
-      trips.map((t) =>
-        t.id === tripId
-          ? { ...t, status: 'Completed', final_odometer: finalOdometer, fuel_consumed: fuelConsumed }
-          : t
-      )
-    );
-    setVehicles(
-      vehicles.map((v) =>
-        v.registration_number === trip.vehicle_reg
-          ? { ...v, status: 'Available', odometer: finalOdometer }
-          : v
-      )
-    );
-    setDrivers(drivers.map((d) => (d.name === trip.driver_name ? { ...d, status: 'Available' } : d)));
+    try {
+      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          final_odometer: finalOdometer,
+          fuel_consumed_liters: fuelConsumed,
+          revenue: 1500,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to complete trip.');
+      }
 
-    setInfoMsg(`Trip #${tripId} completed. Vehicle odometer updated to ${finalOdometer} km.`);
+      await fetchDashboardData();
+      const statsData = await getDashboardStats(selectedType, selectedRegion);
+      setDashboardStats(statsData);
+      setInfoMsg(`Trip #${tripId} completed. Vehicle odometer updated to ${finalOdometer} km.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to complete trip.');
+    }
   };
 
-  const handleToggleDriverStatus = (id: number) => {
+  const handleToggleDriverStatus = async (id: number) => {
     setErrorMsg('');
     setInfoMsg('');
 
-    setDrivers(
-      drivers.map((d) => {
-        if (d.id === id) {
-          const nextStatus = d.status === 'Suspended' ? 'Available' : 'Suspended';
-          setInfoMsg(`Driver ${d.name} status updated to ${nextStatus}.`);
-          return { ...d, status: nextStatus };
-        }
-        return d;
-      })
-    );
+    const driver = drivers.find((d) => d.id === id);
+    if (!driver) return;
+
+    const nextAction = driver.status === 'Suspended' ? 'activate' : 'suspend';
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/drivers/${id}/${nextAction}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Failed to ${nextAction} driver.`);
+      }
+
+      await fetchDashboardData();
+      const statsData = await getDashboardStats(selectedType, selectedRegion);
+      setDashboardStats(statsData);
+
+      const nextStatus = nextAction === 'activate' ? 'Available' : 'Suspended';
+      setInfoMsg(`Driver ${driver.name} status updated to ${nextStatus}.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || `Failed to update driver status.`);
+    }
   };
 
   const handleExport = () => {
@@ -219,8 +302,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-
-
       {/* Filter Component */}
       <DashboardFilters
         selectedType={selectedType}
@@ -237,13 +318,65 @@ export default function DashboardPage() {
           vehicles={filteredVehicles}
           drivers={drivers}
           stats={dashboardStats}
-          onRegisterVehicle={(newVehicle) => {
-            setVehicles([newVehicle, ...vehicles]);
-            setInfoMsg(`Vehicle ${newVehicle.registration_number} registered successfully!`);
+          onRegisterVehicle={async (newVehicle) => {
+            setErrorMsg('');
+            setInfoMsg('');
+            try {
+              const suffix = `-${newVehicle.region.toUpperCase()}`;
+              const regNo = newVehicle.registration_number.toUpperCase().trim();
+              const formattedRegNo = regNo.endsWith(suffix) ? regNo : `${regNo}${suffix}`;
+
+              const res = await fetch('http://localhost:8000/api/vehicles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  registration_number: formattedRegNo,
+                  model: newVehicle.model.trim(),
+                  type: newVehicle.type,
+                  max_load_capacity: newVehicle.max_capacity,
+                  odometer: newVehicle.odometer,
+                  acquisition_cost: (newVehicle as any).acquisition_cost || 150000,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                throw new Error(data.detail || 'Failed to register vehicle.');
+              }
+              await fetchDashboardData();
+              const statsData = await getDashboardStats(selectedType, selectedRegion);
+              setDashboardStats(statsData);
+              setInfoMsg(`Vehicle ${newVehicle.registration_number} registered successfully!`);
+            } catch (err: any) {
+              setErrorMsg(err.message || 'Failed to register vehicle.');
+            }
           }}
-          onRegisterDriver={(newDriver) => {
-            setDrivers([...drivers, newDriver]);
-            setInfoMsg(`Driver ${newDriver.name} added successfully!`);
+          onRegisterDriver={async (newDriver) => {
+            setErrorMsg('');
+            setInfoMsg('');
+            try {
+              const res = await fetch('http://localhost:8000/api/drivers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: newDriver.name,
+                  license_number: newDriver.license_number,
+                  license_category: newDriver.license_category,
+                  license_expiry_date: newDriver.license_expiry,
+                  contact_number: newDriver.contact_number,
+                  safety_score: newDriver.safety_score,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                throw new Error(data.detail || 'Failed to register driver.');
+              }
+              await fetchDashboardData();
+              const statsData = await getDashboardStats(selectedType, selectedRegion);
+              setDashboardStats(statsData);
+              setInfoMsg(`Driver ${newDriver.name} added successfully!`);
+            } catch (err: any) {
+              setErrorMsg(err.message || 'Failed to register driver.');
+            }
           }}
         />
       )}

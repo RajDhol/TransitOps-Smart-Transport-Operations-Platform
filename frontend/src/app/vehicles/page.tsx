@@ -118,11 +118,15 @@ export default function VehicleRegistryPage() {
     }
 
     try {
+      const suffix = `-${formData.region.toUpperCase()}`;
+      const regNo = formData.registration_number.toUpperCase().trim();
+      const formattedRegNo = regNo.endsWith(suffix) ? regNo : `${regNo}${suffix}`;
+
       const res = await fetch('http://localhost:8000/api/vehicles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          registration_number: formData.registration_number.toUpperCase().trim(),
+          registration_number: formattedRegNo,
           model: formData.model.trim(),
           type: formData.type,
           max_load_capacity: capacity,
@@ -301,6 +305,12 @@ export default function VehicleRegistryPage() {
                   <td className="py-3 font-semibold">
                     {currencyCode.includes('INR') ? 'Rs. ' : '$'}
                     {v.acquisition_cost.toLocaleString()}
+                  </td>
+                  <td className="py-3">
+                    {(() => {
+                      const parts = v.registration_number.split('-');
+                      return parts.length > 2 ? parts[parts.length - 1] : 'GJ';
+                    })()}
                   </td>
                   <td className="py-3">
                     <Badge
