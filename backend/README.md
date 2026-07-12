@@ -12,9 +12,9 @@ py -m uvicorn backend.main:app --reload --port 8000
 
 ```json
 {
-  "email": "manager@transitops.com",
-  "password": "securepassword123"
+  "email": "robert.miller@transitops.com",
+  "password": "<the plaintext password matching the seed hash>"
 }
 ```
 
-The API creates `transitops.db` locally from `schema.sql` and `seed_data.sql` on startup. The supplied seed password hashes are placeholders, so every seeded development account is initialized with `securepassword123`.
+The API creates `transitops.db` locally from `schema.sql` and `seed_data.sql` on startup without modifying the seeded data.
