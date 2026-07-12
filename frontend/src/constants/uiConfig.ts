@@ -20,22 +20,22 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     allowedRoles: ['Fleet Manager', 'Driver', 'Safety Officer', 'Financial Analyst'],
   },
   {
-    name: 'Vehicle Registry',
+    name: 'Fleet',
     href: '/vehicles',
     allowedRoles: ['Fleet Manager'],
   },
   {
-    name: 'Driver Management',
+    name: 'Drivers',
     href: '/drivers',
     allowedRoles: ['Fleet Manager', 'Safety Officer'],
   },
   {
-    name: 'Trip Management',
+    name: 'Trips',
     href: '/trips',
     allowedRoles: ['Fleet Manager', 'Driver'],
   },
   {
-    name: 'Maintenance Logs',
+    name: 'Maintenance',
     href: '/maintenance',
     allowedRoles: ['Fleet Manager'],
   },
@@ -45,9 +45,13 @@ export const NAVIGATION_ITEMS: NavItem[] = [
     allowedRoles: ['Fleet Manager', 'Financial Analyst'],
   },
   {
-    name: 'Reports & Analytics',
+    name: 'Analytics',
     href: '/reports',
     allowedRoles: ['Fleet Manager', 'Financial Analyst'],
   },
+  {
+    name: 'Settings',
+    href: '/settings',
+    allowedRoles: ['Fleet Manager', 'Driver', 'Safety Officer', 'Financial Analyst'],
+  },
 ];
-
