@@ -420,6 +420,20 @@ def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
     return TripCreateResponse(trip_id=cursor.lastrowid, status="Draft")
 
 
+@app.get("/api/trips")
+def list_trips() -> list[dict]:
+    """List all trips from the database."""
+    query = """SELECT trips.id, trips.source, trips.destination, trips.vehicle_reg,
+                      drivers.name AS driver_name, trips.cargo_weight, trips.planned_distance,
+                      trips.status, trips.fuel_consumed, trips.final_odometer
+               FROM trips
+               LEFT JOIN drivers ON drivers.id = trips.driver_id
+               ORDER BY trips.id DESC"""
+    with connection() as database:
+        rows = database.execute(query).fetchall()
+    return [dict(row) for row in rows]
+
+
 @app.post("/api/trips/{trip_id}/dispatch", response_model=TripStatusUpdateResponse)
 def dispatch_trip(trip_id: int) -> TripStatusUpdateResponse:
     """Dispatch a draft trip and switch its vehicle and driver to On Trip."""
@@ -454,6 +468,34 @@ def dispatch_trip(trip_id: int) -> TripStatusUpdateResponse:
         database.execute("UPDATE drivers SET status = 'On Trip' WHERE id = ?", (trip["driver_id"],))
 
     return TripStatusUpdateResponse(trip_id=trip_id, status="Dispatched", vehicle_status="On Trip", driver_status="On Trip")
+
+
+@app.post("/api/trips/{trip_id}/cancel", response_model=TripStatusUpdateResponse)
+def cancel_trip(trip_id: int) -> TripStatusUpdateResponse:
+    """Cancel an active or draft trip and release its vehicle and driver."""
+    with connection() as database:
+        trip = database.execute(
+            "SELECT vehicle_reg, driver_id, status FROM trips WHERE id = ?", (trip_id,)
+        ).fetchone()
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        if trip["status"] not in ("Draft", "Dispatched"):
+            raise HTTPException(status_code=400, detail="Only active or draft trips can be cancelled")
+
+        database.execute("UPDATE trips SET status = 'Cancelled' WHERE id = ?", (trip_id,))
+
+        if trip["status"] == "Dispatched":
+            database.execute(
+                "UPDATE vehicles SET status = 'Available' WHERE registration_number = ?",
+                (trip["vehicle_reg"],),
+            )
+            if trip["driver_id"]:
+                database.execute(
+                    "UPDATE drivers SET status = 'Available' WHERE id = ?",
+                    (trip["driver_id"],),
+                )
+        database.commit()
+    return TripStatusUpdateResponse(trip_id=trip_id, status="Cancelled")
 
 
 @app.post("/api/trips/{trip_id}/complete", response_model=TripStatusUpdateResponse)
