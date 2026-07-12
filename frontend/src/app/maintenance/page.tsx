@@ -12,6 +12,7 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../../components/ui/DynamicForm';
+import Pagination from '../../components/ui/Pagination';
 
 interface Vehicle {
   registration_number: string;
@@ -37,10 +38,19 @@ export default function MaintenanceLogsPage() {
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   // Dialog toggles
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  // Reset page number when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -174,6 +184,12 @@ export default function MaintenanceLogsPage() {
     return matchesSearch && matchesStatus;
   });
 
+  const totalPages = Math.ceil(filteredLogs.length / ITEMS_PER_PAGE);
+  const paginatedLogs = filteredLogs.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="space-y-8 font-sans text-gray-900 pb-12">
       {/* Notifications */}
@@ -242,7 +258,7 @@ export default function MaintenanceLogsPage() {
                     Loading records from database...
                   </td>
                 </tr>
-              ) : filteredLogs.map((m) => (
+              ) : paginatedLogs.map((m) => (
                 <tr key={m.id} className="text-gray-700">
                   <td className="py-3 font-semibold">#{m.id}</td>
                   <td className="py-3 font-mono text-xs">{m.vehicle_reg}</td>
@@ -263,7 +279,6 @@ export default function MaintenanceLogsPage() {
                   </td>
                 </tr>
               ))}
-
               {!isLoading && filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan={MAINTENANCE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
@@ -274,6 +289,13 @@ export default function MaintenanceLogsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredLogs.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+        />
       </Card>
 
       {/* Form Modal */}

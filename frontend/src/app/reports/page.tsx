@@ -8,6 +8,7 @@ import {
 
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import Pagination from '../../components/ui/Pagination';
 
 interface VehiclePerformance {
   registration_number: string;
@@ -21,6 +22,10 @@ interface VehiclePerformance {
 }
 
 export default function ReportsPage() {
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   // Mock performance dataset
   const [performances, setPerformances] = useState<VehiclePerformance[]>([
     {
@@ -54,6 +59,12 @@ export default function ReportsPage() {
       fuel_consumed: 15000, // 4 km/L
     },
   ]);
+
+  const totalPages = Math.ceil(performances.length / ITEMS_PER_PAGE);
+  const paginatedPerformances = performances.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   // --- FORMULA COMPUTATIONS ---
 
@@ -163,7 +174,7 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {performances.map((p) => {
+              {paginatedPerformances.map((p) => {
                 const efficiency = calculateEfficiency(p);
                 const roi = calculateRoi(p);
 
@@ -189,6 +200,13 @@ export default function ReportsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={performances.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+        />
       </Card>
     </div>
   );

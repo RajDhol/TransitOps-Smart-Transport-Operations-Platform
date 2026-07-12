@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_VEHICLES, MockVehicle } from '../../constants/dashboardContent';
 import {
   FUEL_EXPENSE_TITLES,
@@ -15,6 +15,7 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../../components/ui/DynamicForm';
+import Pagination from '../../components/ui/Pagination';
 
 interface FuelLog {
   id: number;
@@ -49,6 +50,39 @@ export default function FuelExpensesPage() {
     { id: 2, trip_id: 'TR002', vehicle_reg: 'TRX-12', toll: 340, other: 150, maint: 18000, status: 'Completed' },
     { id: 3, trip_id: 'TR003', vehicle_reg: 'MINI-08', toll: 1860, other: 0, maint: 0, status: 'Available' },
   ]);
+
+  // Fuel Pagination State
+  const [currentFuelPage, setCurrentFuelPage] = useState(1);
+  const FUEL_ITEMS_PER_PAGE = 5;
+
+  // Expense Pagination State
+  const [currentExpensePage, setCurrentExpensePage] = useState(1);
+  const EXPENSE_ITEMS_PER_PAGE = 5;
+
+  const totalFuelPages = Math.ceil(fuelLogs.length / FUEL_ITEMS_PER_PAGE);
+  const paginatedFuelLogs = fuelLogs.slice(
+    (currentFuelPage - 1) * FUEL_ITEMS_PER_PAGE,
+    currentFuelPage * FUEL_ITEMS_PER_PAGE
+  );
+
+  const totalExpensePages = Math.ceil(expenses.length / EXPENSE_ITEMS_PER_PAGE);
+  const paginatedExpenses = expenses.slice(
+    (currentExpensePage - 1) * EXPENSE_ITEMS_PER_PAGE,
+    currentExpensePage * EXPENSE_ITEMS_PER_PAGE
+  );
+
+  // Adjust page if it exceeds total pages
+  useEffect(() => {
+    if (currentFuelPage > totalFuelPages && totalFuelPages > 0) {
+      setCurrentFuelPage(totalFuelPages);
+    }
+  }, [fuelLogs.length, totalFuelPages, currentFuelPage]);
+
+  useEffect(() => {
+    if (currentExpensePage > totalExpensePages && totalExpensePages > 0) {
+      setCurrentExpensePage(totalExpensePages);
+    }
+  }, [expenses.length, totalExpensePages, currentExpensePage]);
 
   // Dialog control
   const [activeForm, setActiveForm] = useState<'fuel' | 'expense' | null>(null);
@@ -224,7 +258,7 @@ export default function FuelExpensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {fuelLogs.map((f) => (
+              {paginatedFuelLogs.map((f) => (
                 <tr key={f.id} className="text-gray-700">
                   <td className="py-3 font-semibold">{f.vehicle_reg}</td>
                   <td className="py-3">{f.date}</td>
@@ -240,6 +274,13 @@ export default function FuelExpensesPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentFuelPage}
+          totalPages={totalFuelPages}
+          onPageChange={setCurrentFuelPage}
+          totalItems={fuelLogs.length}
+          itemsPerPage={FUEL_ITEMS_PER_PAGE}
+        />
       </Card>
 
       {/* Other Expenses Section */}
@@ -256,7 +297,7 @@ export default function FuelExpensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {expenses.map((e) => (
+              {paginatedExpenses.map((e) => (
                 <tr key={e.id} className="text-gray-700">
                   <td className="py-3 font-semibold">{e.trip_id}</td>
                   <td className="py-3 font-mono text-xs">{e.vehicle_reg}</td>
@@ -278,6 +319,13 @@ export default function FuelExpensesPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentExpensePage}
+          totalPages={totalExpensePages}
+          onPageChange={setCurrentExpensePage}
+          totalItems={expenses.length}
+          itemsPerPage={EXPENSE_ITEMS_PER_PAGE}
+        />
       </Card>
 
       {/* Dynamic Calculated Operations Total Sum */}

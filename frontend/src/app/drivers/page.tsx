@@ -11,6 +11,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
+import Pagination from '../../components/ui/Pagination';
 
 // ---- Types ----------------------------------------------------------------
 interface Driver {
@@ -29,9 +30,18 @@ export default function DriverManagementPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   // Search / filter
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  // Reset page number when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   // Notifications
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -333,6 +343,12 @@ export default function DriverManagementPage() {
     return matchesSearch && matchesStatus;
   });
 
+  const totalPages = Math.ceil(filteredDrivers.length / ITEMS_PER_PAGE);
+  const paginatedDrivers = filteredDrivers.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   // ---- Score color helper --------------------------------------------------
   const scoreColor = (score: number) =>
     score >= 85 ? 'text-green-600' : score >= 70 ? 'text-amber-500' : 'text-red-500';
@@ -404,13 +420,13 @@ export default function DriverManagementPage() {
                     Loading drivers from database...
                   </td>
                 </tr>
-              ) : filteredDrivers.length === 0 ? (
+              ) : paginatedDrivers.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-center py-8 text-gray-400 text-sm">
                     No drivers found matching search or filters.
                   </td>
                 </tr>
-              ) : filteredDrivers.map(d => (
+              ) : paginatedDrivers.map(d => (
                 <tr key={d.id} className="text-gray-700">
                   <td className="py-3 font-semibold">#{d.id}</td>
                   <td className="py-3 font-semibold">{d.name}</td>
@@ -499,6 +515,13 @@ export default function DriverManagementPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredDrivers.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+        />
       </Card>
 
       {/* ── Register Driver Modal ─────────────────────────────────────── */}
