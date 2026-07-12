@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MockDriver, TABLE_HEADERS } from '../../constants/dashboardContent';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import Pagination from '../ui/Pagination';
 
 interface SafetyOfficerDashboardProps {
   drivers: MockDriver[];
@@ -12,6 +13,39 @@ interface SafetyOfficerDashboardProps {
 }
 
 export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }: SafetyOfficerDashboardProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const DRIVERS_PER_PAGE = 5;
+
+  const [sortBy, setSortBy] = useState<'safety-desc' | 'safety-asc' | 'name-asc' | 'name-desc'>('safety-desc');
+
+  // Reset page when sorting changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortBy]);
+
+  // Apply sorting
+  const sortedDrivers = [...drivers].sort((a, b) => {
+    if (sortBy === 'safety-desc') {
+      return b.safety_score - a.safety_score;
+    }
+    if (sortBy === 'safety-asc') {
+      return a.safety_score - b.safety_score;
+    }
+    if (sortBy === 'name-asc') {
+      return a.name.localeCompare(b.name);
+    }
+    if (sortBy === 'name-desc') {
+      return b.name.localeCompare(a.name);
+    }
+    return 0;
+  });
+
+  const totalPages = Math.ceil(sortedDrivers.length / DRIVERS_PER_PAGE);
+  const paginatedDrivers = sortedDrivers.slice(
+    (currentPage - 1) * DRIVERS_PER_PAGE,
+    currentPage * DRIVERS_PER_PAGE
+  );
+
   return (
     <div className="space-y-8 font-sans">
       {/* Compliance cards */}
@@ -29,7 +63,21 @@ export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }
       </Card>
 
       {/* Driver List with Controls */}
-      <Card title="Driver Safety Ratings & Status Controls">
+      <Card
+        title="Driver Safety Ratings & Status Controls"
+        headerActions={
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white font-sans font-semibold text-gray-700"
+          >
+            <option value="safety-desc">Safety Score: High to Low (Desc)</option>
+            <option value="safety-asc">Safety Score: Low to High (Asc)</option>
+            <option value="name-asc">Name: A to Z (Asc)</option>
+            <option value="name-desc">Name: Z to A (Desc)</option>
+          </select>
+        }
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -40,7 +88,7 @@ export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {drivers.map((d) => (
+              {paginatedDrivers.map((d) => (
                 <tr key={d.id} className="text-gray-700">
                   <td className="py-3 font-semibold">{d.name}</td>
                   <td className="py-3">{d.license_expiry}</td>
@@ -72,9 +120,23 @@ export default function SafetyOfficerDashboard({ drivers, onToggleDriverStatus }
                   </td>
                 </tr>
               ))}
+              {paginatedDrivers.length === 0 && (
+                <tr>
+                  <td colSpan={TABLE_HEADERS.drivers.length} className="text-center py-8 text-gray-400">
+                    No drivers registered.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={sortedDrivers.length}
+          itemsPerPage={DRIVERS_PER_PAGE}
+        />
       </Card>
     </div>
   );

@@ -34,14 +34,15 @@ export default function DriverManagementPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
 
-  // Search / filter
+  // Search / filter / sort
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'score-desc' | 'score-asc'>('name-desc');
 
-  // Reset page number when filters change
+  // Reset page number when filters/sorting change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, sortBy]);
 
   // Notifications
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -334,14 +335,30 @@ export default function DriverManagementPage() {
     return null;
   };
 
-  // ---- Filter --------------------------------------------------------------
-  const filteredDrivers = drivers.filter(d => {
-    const matchesSearch =
-      d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.license_number.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = !statusFilter || d.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // ---- Filter & Sort --------------------------------------------------------------
+  const filteredDrivers = drivers
+    .filter(d => {
+      const matchesSearch =
+        d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.license_number.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = !statusFilter || d.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name-asc') {
+        return a.name.localeCompare(b.name);
+      }
+      if (sortBy === 'name-desc') {
+        return b.name.localeCompare(a.name);
+      }
+      if (sortBy === 'score-desc') {
+        return b.safety_score - a.safety_score;
+      }
+      if (sortBy === 'score-asc') {
+        return a.safety_score - b.safety_score;
+      }
+      return 0;
+    });
 
   const totalPages = Math.ceil(filteredDrivers.length / ITEMS_PER_PAGE);
   const paginatedDrivers = filteredDrivers.slice(
@@ -387,13 +404,23 @@ export default function DriverManagementPage() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white"
+              className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white text-gray-700 font-sans"
             >
               <option value="">All Statuses</option>
               <option value="Available">Available</option>
               <option value="On Trip">On Trip</option>
               <option value="Off Duty">Off Duty</option>
               <option value="Suspended">Suspended</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white text-gray-700 font-sans"
+            >
+              <option value="name-desc">Sort: Name (Z to A)</option>
+              <option value="name-asc">Sort: Name (A to Z)</option>
+              <option value="score-desc">Sort: Safety (High to Low)</option>
+              <option value="score-asc">Sort: Safety (Low to High)</option>
             </select>
           </div>
         }

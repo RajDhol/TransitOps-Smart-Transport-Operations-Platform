@@ -7,6 +7,7 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
+import Pagination from '../ui/Pagination';
 
 interface DriverDashboardProps {
   vehicles: MockVehicle[];
@@ -26,6 +27,8 @@ export default function DriverDashboard({
   const [newTrip, setNewTrip] = useState({ source: '', destination: '', vehicle_reg: '', driver_id: '', cargo_weight: '', planned_distance: '' });
   const [completeTripId, setCompleteTripId] = useState<number | null>(null);
   const [completionData, setCompletionData] = useState({ final_odometer: '', fuel_consumed: '' });
+  const [tripPage, setTripPage] = useState(1);
+  const TRIPS_PER_PAGE = 5;
 
   const handleSubmitTrip = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,38 +117,58 @@ export default function DriverDashboard({
       <div className="lg:col-span-2 space-y-6">
         <Card title="Active & Assigned Trips">
           <div className="space-y-4">
-            {trips.filter((t) => t.status === 'Dispatched' || t.status === 'Draft').map((trip) => (
-              <div key={trip.id} className="border border-gray-200 p-4 rounded bg-gray-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-900">Trip #{trip.id}</span>
-                    <Badge color={trip.status === 'Dispatched' ? 'info' : 'gray'}>
-                      {trip.status}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Route: <span className="font-medium text-gray-800">{trip.source}</span> → <span className="font-medium text-gray-800">{trip.destination}</span>
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Vehicle: {trip.vehicle_reg} | Driver: {trip.driver_name} | Cargo: {trip.cargo_weight} kg
-                  </p>
-                </div>
+            {(() => {
+              const activeTrips = trips.filter((t) => t.status === 'Dispatched' || t.status === 'Draft');
+              const totalPages = Math.ceil(activeTrips.length / TRIPS_PER_PAGE);
+              const paginatedTrips = activeTrips.slice(
+                (tripPage - 1) * TRIPS_PER_PAGE,
+                tripPage * TRIPS_PER_PAGE
+              );
 
-                {trip.status === 'Dispatched' && (
-                  <Button
-                    variant="success"
-                    size="sm"
-                    onClick={() => setCompleteTripId(trip.id)}
-                  >
-                    Complete Trip
-                  </Button>
-                )}
-              </div>
-            ))}
+              if (activeTrips.length === 0) {
+                return <p className="text-sm text-gray-400 text-center py-6">No active or pending trips found.</p>;
+              }
 
-            {trips.filter((t) => t.status === 'Dispatched' || t.status === 'Draft').length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-6">No active or pending trips found.</p>
-            )}
+              return (
+                <>
+                  {paginatedTrips.map((trip) => (
+                    <div key={trip.id} className="border border-gray-200 p-4 rounded bg-gray-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900">Trip #{trip.id}</span>
+                          <Badge color={trip.status === 'Dispatched' ? 'info' : 'gray'}>
+                            {trip.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Route: <span className="font-medium text-gray-800">{trip.source}</span> → <span className="font-medium text-gray-800">{trip.destination}</span>
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Vehicle: {trip.vehicle_reg} | Driver: {trip.driver_name} | Cargo: {trip.cargo_weight} kg
+                        </p>
+                      </div>
+
+                      {trip.status === 'Dispatched' && (
+                        <Button
+                          variant="success"
+                          size="sm"
+                          onClick={() => setCompleteTripId(trip.id)}
+                        >
+                          Complete Trip
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Pagination
+                    currentPage={tripPage}
+                    totalPages={totalPages}
+                    onPageChange={setTripPage}
+                    totalItems={activeTrips.length}
+                    itemsPerPage={TRIPS_PER_PAGE}
+                  />
+                </>
+              );
+            })()}
           </div>
         </Card>
 
