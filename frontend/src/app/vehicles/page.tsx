@@ -15,6 +15,7 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm from '../../components/ui/DynamicForm';
+import Pagination from '../../components/ui/Pagination';
 
 interface Vehicle {
   registration_number: string;
@@ -34,6 +35,10 @@ export default function VehicleRegistryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [currencyCode, setCurrencyCode] = useState('INR (Rs)');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
 
   // UI Dialog toggles
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,6 +75,11 @@ export default function VehicleRegistryPage() {
   useEffect(() => {
     fetchFleetData();
   }, []);
+
+  // Reset page number when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, typeFilter, statusFilter]);
 
   // --- FORM SUBMIT & DYNAMIC VALIDATION ---
   const handleFormSubmit = async (formData: Record<string, string>) => {
@@ -193,6 +203,12 @@ export default function VehicleRegistryPage() {
     return matchesSearch && matchesType && matchesStatus;
   });
 
+  const totalPages = Math.ceil(filteredVehicles.length / ITEMS_PER_PAGE);
+  const paginatedVehicles = filteredVehicles.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="space-y-8 font-sans text-gray-900 pb-12">
       {/* Notifications */}
@@ -275,7 +291,7 @@ export default function VehicleRegistryPage() {
                     Loading fleet data...
                   </td>
                 </tr>
-              ) : filteredVehicles.map((v) => (
+              ) : paginatedVehicles.map((v) => (
                 <tr key={v.registration_number} className="text-gray-700">
                   <td className="py-3 font-semibold">{v.registration_number}</td>
                   <td className="py-3">{v.model}</td>
@@ -325,7 +341,6 @@ export default function VehicleRegistryPage() {
                   )}
                 </tr>
               ))}
-
               {!isLoading && filteredVehicles.length === 0 && (
                 <tr>
                   <td colSpan={VEHICLE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
@@ -336,6 +351,13 @@ export default function VehicleRegistryPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredVehicles.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+        />
       </Card>
 
       {/* Registration Modal */}

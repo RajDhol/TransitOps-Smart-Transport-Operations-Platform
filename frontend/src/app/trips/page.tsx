@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
+import Pagination from '../../components/ui/Pagination';
 
 interface BackendVehicle {
   registration_number: string;
@@ -45,6 +46,10 @@ export default function TripManagementPage() {
   const [drivers, setDrivers] = useState<BackendDriver[]>([]);
   const [trips, setTrips] = useState<TripLog[]>([]);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   // Selected trip for lifecycle tracker
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
@@ -66,6 +71,19 @@ export default function TripManagementPage() {
   const [notification, setNotification] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const totalPages = Math.ceil(trips.length / ITEMS_PER_PAGE);
+  const paginatedTrips = trips.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  // Adjust page if it exceeds totalPages
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [trips.length, totalPages, currentPage]);
 
   // --- FETCH DATA FROM BACKEND API ---
   const fetchRosterData = async () => {
@@ -614,7 +632,7 @@ export default function TripManagementPage() {
             </span>
             
             <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
-              {trips.map((t) => {
+              {paginatedTrips.map((t) => {
                 const isSelected = String(t.id) === selectedTripId;
 
                 return (
@@ -703,12 +721,20 @@ export default function TripManagementPage() {
                 );
               })}
 
-              {trips.length === 0 && (
+              {paginatedTrips.length === 0 && (
                 <div className="text-center py-8 text-gray-400 text-sm">
                   No active dispatches found in the database.
                 </div>
               )}
             </div>
+
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={trips.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+            />
 
             {/* Footer legend to match visual mockup note */}
             <div className="pt-2 border-t border-gray-150 mt-4">
