@@ -22,7 +22,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   {
     name: 'Fleet',
     href: '/vehicles',
-    allowedRoles: ['Fleet Manager'],
+    allowedRoles: ['Fleet Manager', 'Driver', 'Financial Analyst'], // Added Driver and Financial Analyst (View-Only)
   },
   {
     name: 'Drivers',
@@ -32,7 +32,7 @@ export const NAVIGATION_ITEMS: NavItem[] = [
   {
     name: 'Trips',
     href: '/trips',
-    allowedRoles: ['Fleet Manager', 'Driver'],
+    allowedRoles: ['Fleet Manager', 'Driver', 'Safety Officer'], // Added Safety Officer (View-Only)
   },
   {
     name: 'Maintenance',

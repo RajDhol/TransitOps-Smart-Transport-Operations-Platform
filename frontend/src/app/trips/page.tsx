@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import {
   INITIAL_VEHICLES,
   INITIAL_DRIVERS,
@@ -22,6 +23,9 @@ import Modal from '../../components/ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../../components/ui/DynamicForm';
 
 export default function TripManagementPage() {
+  const { user } = useAuth();
+  const isOperator = user?.role === 'Fleet Manager' || user?.role === 'Driver'; // Safety Officer is view-only
+
   // Core states
   const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
   const [drivers, setDrivers] = useState<MockDriver[]>(INITIAL_DRIVERS);
@@ -40,8 +44,6 @@ export default function TripManagementPage() {
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // --- DYNAMIC SCHEMAS FOR MODALS ---
-  
-  // 1. Dispatch Trip Schema (only lists Available assets)
   const getDispatchSchema = (): FormFieldSchema[] => {
     const availableVehicles = vehicles.filter((v) => v.status === 'Available');
     const availableDrivers = drivers.filter((d) => d.status === 'Available');
@@ -74,7 +76,6 @@ export default function TripManagementPage() {
     ];
   };
 
-  // 2. Completion Logs Schema
   const TRIP_COMPLETE_SCHEMA: FormFieldSchema[] = [
     { name: 'final_odometer', label: 'Final Odometer Reading (km)', type: 'number', placeholder: 'e.g. 12500', required: true },
     { name: 'fuel_consumed', label: 'Fuel Consumed (liters)', type: 'number', placeholder: 'e.g. 45', required: true },
@@ -83,6 +84,7 @@ export default function TripManagementPage() {
   // --- ACTIONS & DISPATCH/COMPLETE VALIDATION ---
   
   const handleDispatchSubmit = (formData: Record<string, string>) => {
+    if (!isOperator) return;
     setFormErrors({});
     setNotification(null);
     const errors: Record<string, string> = {};
@@ -115,7 +117,6 @@ export default function TripManagementPage() {
       return;
     }
 
-    // Business Rules Verification
     if (vehicle!.status !== 'Available') {
       errors.vehicle_reg = `Vehicle ${vehicle!.registration_number} is not Available.`;
     }
@@ -123,14 +124,12 @@ export default function TripManagementPage() {
       errors.driver_id = `Driver ${driver!.name} is not Available.`;
     }
 
-    // Check license expiry
     const expiry = new Date(driver!.license_expiry);
     const current = new Date();
     if (expiry < current) {
       errors.driver_id = `Driver license is expired (Expired: ${driver!.license_expiry}).`;
     }
 
-    // Capacity limit check
     if (cargo > vehicle!.max_capacity) {
       errors.cargo_weight = `Cargo (${cargo}kg) exceeds vehicle capacity limit (${vehicle!.max_capacity}kg).`;
     }
@@ -140,7 +139,6 @@ export default function TripManagementPage() {
       return;
     }
 
-    // State changes: Assign status & track
     const newTripId = trips.length + 101;
     const addedTrip: MockTrip = {
       id: newTripId,
@@ -169,6 +167,7 @@ export default function TripManagementPage() {
   };
 
   const handleCompleteSubmit = (formData: Record<string, string>) => {
+    if (!isOperator) return;
     setFormErrors({});
     setNotification(null);
     const errors: Record<string, string> = {};
@@ -198,7 +197,6 @@ export default function TripManagementPage() {
       return;
     }
 
-    // Save logs and restore assets availability
     setTrips(
       trips.map((t) =>
         t.id === activeCompleteTripId
@@ -223,6 +221,7 @@ export default function TripManagementPage() {
   };
 
   const handleCancelTrip = (tripId: number) => {
+    if (!isOperator) return;
     const target = trips.find((t) => t.id === tripId);
     if (!target) return;
 
@@ -252,19 +251,15 @@ export default function TripManagementPage() {
   });
 
   return (
-    <div className="space-y-8 font-sans text-gray-900 pb-12">
+    <div className="space-y-8 font-sans text-gray-950 pb-12">
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
-            notification.type === 'success'
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
         >
-          <span>{notification.type === 'success' ? '✓' : '!'}</span>
+          <span>✓</span>
           <div>
-            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
+            <p className="font-semibold">Success</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
@@ -276,9 +271,12 @@ export default function TripManagementPage() {
           <h2 className="text-2xl font-bold tracking-tight">{TRIP_PAGE_TITLES.header}</h2>
           <p className="text-sm text-gray-500 mt-1">{TRIP_PAGE_TITLES.description}</p>
         </div>
-        <Button onClick={() => { setFormErrors({}); setIsDispatchModalOpen(true); }}>
-          {TRIP_PAGE_TITLES.dispatchButton}
-        </Button>
+        {/* Only operators can Dispatch new routes */}
+        {isOperator && (
+          <Button onClick={() => { setFormErrors({}); setIsDispatchModalOpen(true); }}>
+            {TRIP_PAGE_TITLES.dispatchButton}
+          </Button>
+        )}
       </div>
 
       {/* Roster Table */}
@@ -312,7 +310,7 @@ export default function TripManagementPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider">
-                {TRIP_TABLE_HEADERS.map((header) => (
+                {TRIP_TABLE_HEADERS.filter((h) => h !== 'Actions' || isOperator).map((header) => (
                   <th key={header} className="pb-3 last:text-right">
                     {header}
                   </th>
@@ -348,25 +346,28 @@ export default function TripManagementPage() {
                       {t.status}
                     </Badge>
                   </td>
-                  <td className="py-3 text-right flex justify-end gap-2">
-                    {t.status === 'Dispatched' && (
-                      <>
-                        <Button
-                          variant="success"
-                          size="sm"
-                          onClick={() => {
-                            setFormErrors({});
-                            setActiveCompleteTripId(t.id);
-                          }}
-                        >
-                          Complete
-                        </Button>
-                        <Button variant="danger" size="sm" onClick={() => handleCancelTrip(t.id)}>
-                          Cancel
-                        </Button>
-                      </>
-                    )}
-                  </td>
+                  {/* Hide row action buttons for view-only roles */}
+                  {isOperator && (
+                    <td className="py-3 text-right flex justify-end gap-2">
+                      {t.status === 'Dispatched' && (
+                        <>
+                          <Button
+                            variant="success"
+                            size="sm"
+                            onClick={() => {
+                              setFormErrors({});
+                              setActiveCompleteTripId(t.id);
+                            }}
+                          >
+                            Complete
+                          </Button>
+                          <Button variant="danger" size="sm" onClick={() => handleCancelTrip(t.id)}>
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
 
@@ -382,39 +383,43 @@ export default function TripManagementPage() {
         </div>
       </Card>
 
-      {/* Modal 1: Dispatch New Trip */}
-      <Modal
-        isOpen={isDispatchModalOpen}
-        onClose={() => setIsDispatchModalOpen(false)}
-        title={TRIP_PAGE_TITLES.formTitle}
-      >
-        <div className="mb-4">
-          <p className="text-sm text-gray-500">{TRIP_PAGE_TITLES.formSubtitle}</p>
-        </div>
-        <DynamicForm
-          schema={getDispatchSchema()}
-          onSubmit={handleDispatchSubmit}
-          submitLabel="Dispatch Route"
-          errors={formErrors}
-        />
-      </Modal>
+      {/* Dispatch Modal */}
+      {isOperator && (
+        <Modal
+          isOpen={isDispatchModalOpen}
+          onClose={() => setIsDispatchModalOpen(false)}
+          title={TRIP_PAGE_TITLES.formTitle}
+        >
+          <div className="mb-4">
+            <p className="text-sm text-gray-500">{TRIP_PAGE_TITLES.formSubtitle}</p>
+          </div>
+          <DynamicForm
+            schema={getDispatchSchema()}
+            onSubmit={handleDispatchSubmit}
+            submitLabel="Dispatch Route"
+            errors={formErrors}
+          />
+        </Modal>
+      )}
 
-      {/* Modal 2: Complete Active Trip */}
-      <Modal
-        isOpen={activeCompleteTripId !== null}
-        onClose={() => setActiveCompleteTripId(null)}
-        title={TRIP_PAGE_TITLES.completeTitle}
-      >
-        <div className="mb-4">
-          <p className="text-sm text-gray-500">{TRIP_PAGE_TITLES.completeSubtitle}</p>
-        </div>
-        <DynamicForm
-          schema={TRIP_COMPLETE_SCHEMA}
-          onSubmit={handleCompleteSubmit}
-          submitLabel="Complete Trip & Record Logs"
-          errors={formErrors}
-        />
-      </Modal>
+      {/* Complete Modal */}
+      {isOperator && (
+        <Modal
+          isOpen={activeCompleteTripId !== null}
+          onClose={() => setActiveCompleteTripId(null)}
+          title={TRIP_PAGE_TITLES.completeTitle}
+        >
+          <div className="mb-4">
+            <p className="text-sm text-gray-500">{TRIP_PAGE_TITLES.completeSubtitle}</p>
+          </div>
+          <DynamicForm
+            schema={TRIP_COMPLETE_SCHEMA}
+            onSubmit={handleCompleteSubmit}
+            submitLabel="Complete Trip & Record Logs"
+            errors={formErrors}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

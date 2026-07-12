@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { INITIAL_VEHICLES, MockVehicle } from '../../constants/dashboardContent';
 import {
   VEHICLE_PAGE_TITLES,
@@ -17,6 +18,9 @@ import Modal from '../../components/ui/Modal';
 import DynamicForm from '../../components/ui/DynamicForm';
 
 export default function VehicleRegistryPage() {
+  const { user } = useAuth();
+  const isManager = user?.role === 'Fleet Manager';
+
   // Mock vehicles roster state
   const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
   
@@ -31,16 +35,15 @@ export default function VehicleRegistryPage() {
 
   // --- FORM SUBMIT & DYNAMIC VALIDATION ---
   const handleFormSubmit = (formData: Record<string, string>) => {
+    if (!isManager) return;
     setFormErrors({});
     setNotification(null);
 
     const errors: Record<string, string> = {};
 
-    // 1. Dynamic Check for empty required fields
     if (!formData.registration_number?.trim()) {
       errors.registration_number = 'Registration number is required.';
     } else {
-      // Uniqueness check
       const exists = vehicles.some(
         (v) => v.registration_number.toLowerCase() === formData.registration_number.trim().toLowerCase()
       );
@@ -68,13 +71,11 @@ export default function VehicleRegistryPage() {
       errors.acquisition_cost = 'Acquisition cost must be positive.';
     }
 
-    // Set errors if invalid
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
 
-    // 2. Add vehicle & close modal
     const newVehicle: MockVehicle = {
       registration_number: formData.registration_number.toUpperCase().trim(),
       model: formData.model.trim(),
@@ -93,18 +94,18 @@ export default function VehicleRegistryPage() {
     });
   };
 
-  // --- ACTION BUTTON TRIGGERS ---
   const handleRetireVehicle = (regNo: string) => {
+    if (!isManager) return;
     setVehicles(
       vehicles.map((v) => (v.registration_number === regNo ? { ...v, status: 'Retired' } : v))
     );
   };
 
   const handleDeleteVehicle = (regNo: string) => {
+    if (!isManager) return;
     setVehicles(vehicles.filter((v) => v.registration_number !== regNo));
   };
 
-  // --- FILTER COMBINATIONS ---
   const filteredVehicles = vehicles.filter((v) => {
     const matchesSearch =
       v.registration_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -120,15 +121,11 @@ export default function VehicleRegistryPage() {
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
-            notification.type === 'success'
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
         >
-          <span>{notification.type === 'success' ? '✓' : '!'}</span>
+          <span>✓</span>
           <div>
-            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
+            <p className="font-semibold">Success</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
@@ -140,9 +137,12 @@ export default function VehicleRegistryPage() {
           <h2 className="text-2xl font-bold tracking-tight">{VEHICLE_PAGE_TITLES.header}</h2>
           <p className="text-sm text-gray-500 mt-1">{VEHICLE_PAGE_TITLES.description}</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}>
-          {VEHICLE_PAGE_TITLES.registerButton}
-        </Button>
+        {/* Only show Register button to Fleet Managers */}
+        {isManager && (
+          <Button onClick={() => setIsModalOpen(true)}>
+            {VEHICLE_PAGE_TITLES.registerButton}
+          </Button>
+        )}
       </div>
 
       {/* Roster list */}
@@ -188,7 +188,8 @@ export default function VehicleRegistryPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider">
-                {VEHICLE_TABLE_HEADERS.map((header) => (
+                {/* Dynamically strip Actions header if not Manager */}
+                {VEHICLE_TABLE_HEADERS.filter((h) => h !== 'Actions' || isManager).map((header) => (
                   <th key={header} className="pb-3 last:text-right">
                     {header}
                   </th>
@@ -222,24 +223,27 @@ export default function VehicleRegistryPage() {
                       {v.status}
                     </Badge>
                   </td>
-                  <td className="py-3 text-right flex justify-end gap-2">
-                    {v.status !== 'Retired' && (
+                  {/* Hide row action buttons for view-only roles */}
+                  {isManager && (
+                    <td className="py-3 text-right flex justify-end gap-2">
+                      {v.status !== 'Retired' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRetireVehicle(v.registration_number)}
+                        >
+                          Retire
+                        </Button>
+                      )}
                       <Button
-                        variant="outline"
+                        variant="danger"
                         size="sm"
-                        onClick={() => handleRetireVehicle(v.registration_number)}
+                        onClick={() => handleDeleteVehicle(v.registration_number)}
                       >
-                        Retire
+                        Delete
                       </Button>
-                    )}
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleDeleteVehicle(v.registration_number)}
-                    >
-                      Delete
-                    </Button>
-                  </td>
+                    </td>
+                  )}
                 </tr>
               ))}
 
@@ -255,18 +259,20 @@ export default function VehicleRegistryPage() {
         </div>
       </Card>
 
-      {/* Dynamic Centralized Modal Form */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={VEHICLE_PAGE_TITLES.formTitle}>
-        <div className="mb-4">
-          <p className="text-sm text-gray-500">{VEHICLE_PAGE_TITLES.formSubtitle}</p>
-        </div>
-        <DynamicForm
-          schema={VEHICLE_FORM_SCHEMA}
-          onSubmit={handleFormSubmit}
-          submitLabel="Save Vehicle to Fleet"
-          errors={formErrors}
-        />
-      </Modal>
+      {/* Registration Modal (Only loadable for Manager) */}
+      {isManager && (
+        <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={VEHICLE_PAGE_TITLES.formTitle}>
+          <div className="mb-4">
+            <p className="text-sm text-gray-500">{VEHICLE_PAGE_TITLES.formSubtitle}</p>
+          </div>
+          <DynamicForm
+            schema={VEHICLE_FORM_SCHEMA}
+            onSubmit={handleFormSubmit}
+            submitLabel="Save Vehicle to Fleet"
+            errors={formErrors}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
