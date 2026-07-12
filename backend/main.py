@@ -918,6 +918,160 @@ def get_analytics() -> AnalyticsResponse:
 
 
 # ---------------------------------------------------------------------------
+# FUEL LOGS & EXPENSES MODELS
+# ---------------------------------------------------------------------------
+class FuelLogResponse(BaseModel):
+    id: int
+    vehicle_reg: str
+    liters: float
+    cost: float
+    log_date: date
+
+
+class FuelLogCreate(BaseModel):
+    vehicle_reg: str
+    liters: float
+    cost: float
+    log_date: date
+
+
+class ExpenseResponse(BaseModel):
+    id: int
+    vehicle_reg: str
+    category: str
+    cost: float
+    expense_date: date
+    notes: str | None = None
+
+
+class ExpenseCreate(BaseModel):
+    vehicle_reg: str
+    category: str
+    cost: float
+    expense_date: date
+    notes: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# FUEL LOGS & EXPENSES ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.get("/api/fuel-logs", response_model=list[FuelLogResponse])
+def list_fuel_logs() -> list[dict]:
+    """Retrieve all logged fuel refills."""
+    with connection() as database:
+        rows = database.execute(
+            "SELECT id, vehicle_reg, liters, cost, log_date FROM fuel_logs ORDER BY id DESC"
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "vehicle_reg": row["vehicle_reg"],
+            "liters": float(row["liters"]),
+            "cost": float(row["cost"]),
+            "log_date": date.fromisoformat(row["log_date"]),
+        }
+        for row in rows
+    ]
+
+
+@app.post("/api/fuel-logs", response_model=FuelLogResponse, status_code=status.HTTP_201_CREATED)
+def create_fuel_log(payload: FuelLogCreate) -> FuelLogResponse:
+    """Log a new vehicle fuel refill receipt."""
+    if payload.liters <= 0 or payload.cost <= 0:
+        raise HTTPException(status_code=400, detail="Liters and cost must be positive values.")
+    with connection() as database:
+        # Verify vehicle exists
+        if not database.execute(
+            "SELECT 1 FROM vehicles WHERE registration_number = ?", (payload.vehicle_reg.strip(),)
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="Vehicle not found.")
+        cursor = database.execute(
+            """INSERT INTO fuel_logs (vehicle_reg, liters, cost, log_date)
+               VALUES (?, ?, ?, ?)""",
+            (payload.vehicle_reg.strip(), payload.liters, payload.cost, str(payload.log_date)),
+        )
+    return FuelLogResponse(
+        id=cursor.lastrowid,
+        vehicle_reg=payload.vehicle_reg.strip(),
+        liters=payload.liters,
+        cost=payload.cost,
+        log_date=payload.log_date,
+    )
+
+
+@app.delete("/api/fuel-logs/{log_id}")
+def delete_fuel_log(log_id: int) -> dict:
+    """Delete a logged fuel refill receipt."""
+    with connection() as database:
+        if not database.execute("SELECT 1 FROM fuel_logs WHERE id = ?", (log_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Fuel log not found.")
+        database.execute("DELETE FROM fuel_logs WHERE id = ?", (log_id,))
+    return {"id": log_id, "deleted": True}
+
+
+@app.get("/api/expenses", response_model=list[ExpenseResponse])
+def list_expenses() -> list[dict]:
+    """Retrieve all operational overhead expenses."""
+    with connection() as database:
+        rows = database.execute(
+            "SELECT id, vehicle_reg, category, cost, expense_date, notes FROM expenses ORDER BY id DESC"
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "vehicle_reg": row["vehicle_reg"],
+            "category": row["category"],
+            "cost": float(row["cost"]),
+            "expense_date": date.fromisoformat(row["expense_date"]),
+            "notes": row["notes"],
+        }
+        for row in rows
+    ]
+
+
+@app.post("/api/expenses", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
+def create_expense(payload: ExpenseCreate) -> ExpenseResponse:
+    """Log a new operational overhead expense."""
+    if payload.cost <= 0:
+        raise HTTPException(status_code=400, detail="Expense cost must be a positive value.")
+    with connection() as database:
+        # Verify vehicle exists
+        if not database.execute(
+            "SELECT 1 FROM vehicles WHERE registration_number = ?", (payload.vehicle_reg.strip(),)
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="Vehicle not found.")
+        cursor = database.execute(
+            """INSERT INTO expenses (vehicle_reg, category, cost, expense_date, notes)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                payload.vehicle_reg.strip(),
+                payload.category.strip(),
+                payload.cost,
+                str(payload.expense_date),
+                payload.notes.strip() if payload.notes else None,
+            ),
+        )
+    return ExpenseResponse(
+        id=cursor.lastrowid,
+        vehicle_reg=payload.vehicle_reg.strip(),
+        category=payload.category.strip(),
+        cost=payload.cost,
+        expense_date=payload.expense_date,
+        notes=payload.notes.strip() if payload.notes else None,
+    )
+
+
+@app.delete("/api/expenses/{expense_id}")
+def delete_expense(expense_id: int) -> dict:
+    """Delete an operational overhead expense log."""
+    with connection() as database:
+        if not database.execute("SELECT 1 FROM expenses WHERE id = ?", (expense_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Expense log not found.")
+        database.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+    return {"id": expense_id, "deleted": True}
+
+
+# ---------------------------------------------------------------------------
 # SETTINGS MODELS
 # ---------------------------------------------------------------------------
 class SettingsResponse(BaseModel):
