@@ -226,7 +226,14 @@ export default function DashboardPage() {
 
       {/* Dynamic Role-Based Views */}
       {user.role === 'Fleet Manager' && (
-        <FleetManagerDashboard vehicles={filteredVehicles} drivers={drivers} />
+        <FleetManagerDashboard
+          vehicles={filteredVehicles}
+          drivers={drivers}
+          onRegisterVehicle={(newVehicle) => {
+            setVehicles([newVehicle, ...vehicles]);
+            setInfoMsg(`Vehicle ${newVehicle.registration_number} registered successfully!`);
+          }}
+        />
       )}
       {user.role === 'Driver' && (
         <DriverDashboard
