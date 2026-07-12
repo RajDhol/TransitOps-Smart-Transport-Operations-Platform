@@ -159,3 +159,18 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_vehicle_reg ON expenses(vehicle_reg);
+
+-- ============================================================================
+-- 9. SETTINGS TABLE
+-- Stores global depot/org configuration (singleton row, id=1).
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    depot_name TEXT NOT NULL DEFAULT 'My Depot',
+    currency TEXT NOT NULL DEFAULT 'INR (Rs)',
+    distance_unit TEXT NOT NULL DEFAULT 'Kilometers'
+);
+
+-- Seed default settings (ignored if already exists)
+INSERT OR IGNORE INTO settings (id, depot_name, currency, distance_unit)
+VALUES (1, 'Gandhinagar Depot GJ14', 'INR (Rs)', 'Kilometers');

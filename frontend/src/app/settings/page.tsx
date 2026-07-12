@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SETTINGS_TITLES, RBAC_HEADERS } from '../../constants/settingsContent';
 import { NAVIGATION_ITEMS, USER_ROLES } from '../../constants/uiConfig';
 
@@ -10,17 +10,51 @@ import Input from '../../components/ui/Input';
 
 export default function SettingsPage() {
   // General configurations state
-  const [depotName, setDepotName] = useState('Gandhinagar Depot GJ14');
-  const [currency, setCurrency] = useState('INR (Rs)');
-  const [distanceUnit, setDistanceUnit] = useState('Kilometers');
+  const [depotName, setDepotName] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [distanceUnit, setDistanceUnit] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Success alert indicator
+  // Success / error alert indicators
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSave = (e: React.FormEvent) => {
+  // Fetch current settings from backend on mount
+  useEffect(() => {
+    fetch('http://localhost:8000/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        setDepotName(data.depot_name);
+        setCurrency(data.currency);
+        setDistanceUnit(data.distance_unit);
+      })
+      .catch(() => setErrorMsg('Could not load settings from server.'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccessMsg('General configurations saved successfully!');
-    setTimeout(() => setSuccessMsg(''), 4000);
+    setSuccessMsg('');
+    setErrorMsg('');
+    try {
+      const res = await fetch('http://localhost:8000/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          depot_name: depotName,
+          currency,
+          distance_unit: distanceUnit,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to save settings.');
+      }
+      setSuccessMsg('Settings saved! Trips will now auto-fill "' + depotName + '" as the source depot.');
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'An unexpected error occurred.');
+    }
   };
 
   // --- DYNAMIC RBAC RESOLVER FROM UICONFIG ---
@@ -47,9 +81,14 @@ export default function SettingsPage() {
         <div className="p-4 bg-green-50 border border-green-200 text-green-800 text-sm font-medium rounded flex items-start gap-2.5">
           <span>✓</span>
           <div>
-            <p className="font-semibold">Action Executed Successfully</p>
+            <p className="font-semibold">Saved to Database</p>
             <p className="mt-0.5 text-green-700">{successMsg}</p>
           </div>
+        </div>
+      )}
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 text-sm font-medium rounded flex items-center gap-2">
+          <span>✖</span> {errorMsg}
         </div>
       )}
 

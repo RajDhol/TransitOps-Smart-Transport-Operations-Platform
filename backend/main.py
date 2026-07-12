@@ -403,6 +403,101 @@ def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# DRIVER ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.get("/api/drivers", response_model=list[DriverResponse])
+def list_drivers() -> list[dict]:
+    """List all registered drivers."""
+    with connection() as database:
+        rows = database.execute(
+            """SELECT id, name, license_number, license_category,
+                      license_expiry_date, contact_number, safety_score, status
+               FROM drivers ORDER BY id DESC"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/drivers", response_model=DriverRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_driver(driver: DriverCreate) -> DriverRegistrationResponse:
+    """Register a new driver with default status Available."""
+    with connection() as database:
+        exists = database.execute(
+            "SELECT 1 FROM drivers WHERE license_number = ?", (driver.license_number.strip(),)
+        ).fetchone()
+        if exists:
+            raise HTTPException(status_code=400, detail="A driver with this license number already exists.")
+        cursor = database.execute(
+            """INSERT INTO drivers (name, license_number, license_category, license_expiry_date,
+                                    contact_number, safety_score, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'Available')""",
+            (
+                driver.name.strip(),
+                driver.license_number.strip().upper(),
+                driver.license_category.strip(),
+                str(driver.license_expiry_date),
+                driver.contact_number.strip(),
+                max(0, min(100, driver.safety_score)),
+            ),
+        )
+    return DriverRegistrationResponse(id=cursor.lastrowid, name=driver.name.strip(), status="Available")
+
+
+@app.post("/api/drivers/{driver_id}/safety-events", response_model=SafetyEventResponse)
+def log_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEventResponse:
+    """Log a positive or negative safety event and update the driver's safety score."""
+    if event.points == 0 or not (-100 <= event.points <= 100):
+        raise HTTPException(status_code=400, detail="Points must be between -100 and 100 and cannot be zero.")
+    event_date = event.event_date or datetime.now(timezone.utc).date()
+    with connection() as database:
+        driver = database.execute(
+            "SELECT id, safety_score FROM drivers WHERE id = ?", (driver_id,)
+        ).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        new_score = max(0, min(100, driver["safety_score"] + event.points))
+        cursor = database.execute(
+            """INSERT INTO driver_safety_events (driver_id, event_type, points, notes, event_date)
+               VALUES (?, ?, ?, ?, ?)""",
+            (driver_id, event.event_type.strip(), event.points, event.notes, str(event_date)),
+        )
+        database.execute(
+            "UPDATE drivers SET safety_score = ? WHERE id = ?", (new_score, driver_id)
+        )
+    return SafetyEventResponse(
+        id=cursor.lastrowid,
+        driver_id=driver_id,
+        event_type=event.event_type.strip(),
+        points=event.points,
+        safety_score=new_score,
+        event_date=event_date,
+    )
+
+
+@app.post("/api/drivers/{driver_id}/suspend")
+def suspend_driver(driver_id: int) -> dict:
+    """Suspend a driver — blocks them from being dispatched."""
+    with connection() as database:
+        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        if driver["status"] == "On Trip":
+            raise HTTPException(status_code=400, detail="Cannot suspend a driver currently On Trip.")
+        database.execute("UPDATE drivers SET status = 'Suspended' WHERE id = ?", (driver_id,))
+    return {"driver_id": driver_id, "status": "Suspended"}
+
+
+@app.post("/api/drivers/{driver_id}/activate")
+def activate_driver(driver_id: int) -> dict:
+    """Reactivate a suspended driver."""
+    with connection() as database:
+        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found.")
+        database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (driver_id,))
+    return {"driver_id": driver_id, "status": "Available"}
+
+
 @app.post("/api/trips", response_model=TripCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
     """Create a draft trip after validating vehicle load capacity."""
@@ -431,6 +526,20 @@ def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
              trip.cargo_weight, trip.planned_distance),
         )
     return TripCreateResponse(trip_id=cursor.lastrowid, status="Draft")
+
+
+@app.get("/api/trips")
+def list_trips() -> list[dict]:
+    """List all trips from the database."""
+    query = """SELECT trips.id, trips.source, trips.destination, trips.vehicle_reg,
+                      drivers.name AS driver_name, trips.cargo_weight, trips.planned_distance,
+                      trips.status, trips.fuel_consumed, trips.final_odometer
+               FROM trips
+               LEFT JOIN drivers ON drivers.id = trips.driver_id
+               ORDER BY trips.id DESC"""
+    with connection() as database:
+        rows = database.execute(query).fetchall()
+    return [dict(row) for row in rows]
 
 
 @app.post("/api/trips/{trip_id}/dispatch", response_model=TripStatusUpdateResponse)
@@ -467,6 +576,34 @@ def dispatch_trip(trip_id: int) -> TripStatusUpdateResponse:
         database.execute("UPDATE drivers SET status = 'On Trip' WHERE id = ?", (trip["driver_id"],))
 
     return TripStatusUpdateResponse(trip_id=trip_id, status="Dispatched", vehicle_status="On Trip", driver_status="On Trip")
+
+
+@app.post("/api/trips/{trip_id}/cancel", response_model=TripStatusUpdateResponse)
+def cancel_trip(trip_id: int) -> TripStatusUpdateResponse:
+    """Cancel an active or draft trip and release its vehicle and driver."""
+    with connection() as database:
+        trip = database.execute(
+            "SELECT vehicle_reg, driver_id, status FROM trips WHERE id = ?", (trip_id,)
+        ).fetchone()
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        if trip["status"] not in ("Draft", "Dispatched"):
+            raise HTTPException(status_code=400, detail="Only active or draft trips can be cancelled")
+
+        database.execute("UPDATE trips SET status = 'Cancelled' WHERE id = ?", (trip_id,))
+
+        if trip["status"] == "Dispatched":
+            database.execute(
+                "UPDATE vehicles SET status = 'Available' WHERE registration_number = ?",
+                (trip["vehicle_reg"],),
+            )
+            if trip["driver_id"]:
+                database.execute(
+                    "UPDATE drivers SET status = 'Available' WHERE id = ?",
+                    (trip["driver_id"],),
+                )
+        database.commit()
+    return TripStatusUpdateResponse(trip_id=trip_id, status="Cancelled")
 
 
 @app.post("/api/trips/{trip_id}/complete", response_model=TripStatusUpdateResponse)
@@ -637,6 +774,62 @@ def get_analytics() -> AnalyticsResponse:
         total_fuel_cost=round(fuel_cost, 2),
         fuel_efficiency_km_per_liter=round(float(distance) / float(fuel_consumed), 2) if fuel_consumed else 0.0,
         vehicle_roi=vehicle_roi,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS MODELS
+# ---------------------------------------------------------------------------
+class SettingsResponse(BaseModel):
+    depot_name: str
+    currency: str
+    distance_unit: str
+
+
+class SettingsUpdate(BaseModel):
+    depot_name: str
+    currency: str
+    distance_unit: str
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.get("/api/settings", response_model=SettingsResponse)
+def get_settings() -> SettingsResponse:
+    """Return the current global depot settings (singleton row id=1)."""
+    with connection() as database:
+        row = database.execute(
+            "SELECT depot_name, currency, distance_unit FROM settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Settings not found.")
+        return SettingsResponse(
+            depot_name=row["depot_name"],
+            currency=row["currency"],
+            distance_unit=row["distance_unit"],
+        )
+
+
+@app.post("/api/settings", response_model=SettingsResponse)
+def update_settings(payload: SettingsUpdate) -> SettingsResponse:
+    """Save depot settings. Upserts the singleton row (id=1)."""
+    with connection() as database:
+        database.execute(
+            """
+            INSERT INTO settings (id, depot_name, currency, distance_unit)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                depot_name    = excluded.depot_name,
+                currency      = excluded.currency,
+                distance_unit = excluded.distance_unit
+            """,
+            (payload.depot_name, payload.currency, payload.distance_unit),
+        )
+    return SettingsResponse(
+        depot_name=payload.depot_name,
+        currency=payload.currency,
+        distance_unit=payload.distance_unit,
     )
 
 
