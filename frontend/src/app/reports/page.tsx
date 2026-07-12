@@ -24,8 +24,9 @@ interface VehiclePerformance {
 
 export default function ReportsPage() {
   const [performances, setPerformances] = useState<VehiclePerformance[]>([]);
-  const [currencySymbol, setCurrencySymbol] = useState('Rs.');
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -38,15 +39,17 @@ export default function ReportsPage() {
         fetch('http://localhost:8000/api/settings')
       ]);
 
-      if (pRes.ok) {
-        setPerformances(await pRes.ok ? await pRes.json() : []);
+      if (!pRes.ok) {
+        throw new Error('Failed to load performance reports from backend.');
       }
+      setPerformances(await pRes.json());
+
       if (sRes.ok) {
         const sData = await sRes.json();
         setCurrencySymbol(sData.currency?.includes('INR') ? 'Rs. ' : '$');
       }
-    } catch {
-      // Ignore / handled by UI loading fallback
+    } catch (err: any) {
+      setError(err.message || 'Error communicating with backend.');
     } finally {
       setIsLoading(false);
     }
@@ -272,8 +275,20 @@ export default function ReportsPage() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-400">
-                    Loading performance telemetry...
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    Loading performance reports...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-red-500">
+                    {error}
+                  </td>
+                </tr>
+              ) : performances.length === 0 ? (
+                <tr>
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    No vehicle performance records available.
                   </td>
                 </tr>
               ) : paginatedPerformances.map((p) => {
@@ -284,10 +299,22 @@ export default function ReportsPage() {
                   <tr key={p.registration_number} className="text-gray-700">
                     <td className="py-4 font-semibold">{p.registration_number}</td>
                     <td className="py-4 font-medium text-gray-900">{p.model}</td>
-                    <td className="py-4">{currencySymbol}{p.acquisition_cost.toLocaleString()}</td>
-                    <td className="py-4 text-amber-600">{currencySymbol}{p.maintenance_cost.toLocaleString()}</td>
-                    <td className="py-4 text-orange-600">{currencySymbol}{p.fuel_cost.toLocaleString()}</td>
-                    <td className="py-4 text-green-600 font-semibold">{currencySymbol}{p.revenue.toLocaleString()}</td>
+                    <td className="py-4">
+                      {currencySymbol}
+                      {p.acquisition_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-amber-600">
+                      {currencySymbol}
+                      {p.maintenance_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-orange-600">
+                      {currencySymbol}
+                      {p.fuel_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-green-600 font-semibold">
+                      {currencySymbol}
+                      {p.revenue.toLocaleString()}
+                    </td>
                     <td className="py-4 font-semibold text-indigo-600">
                       {efficiency.toFixed(1)} km/L
                     </td>
