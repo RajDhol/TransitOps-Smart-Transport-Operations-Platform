@@ -15,7 +15,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, role: UserRole) => Promise<boolean>;
+  login: (email: string, password: string, role: UserRole) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -39,28 +39,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, role: UserRole): Promise<boolean> => {
+  const login = async (email: string, password: string, role: UserRole): Promise<boolean> => {
     setLoading(true);
-    // Simulate API call for login (in real app, post to /api/auth/login)
     try {
-      const mockUser: User = {
-        id: Math.floor(Math.random() * 1000),
-        name: `${role} User`,
-        email: email,
-        role: role,
-      };
-      const mockToken = 'mock_jwt_token_for_' + role;
+      const res = await fetch('http://localhost:8000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, role }), // <--- Passing the role
+      });
+      if (!res.ok) {
+        // Handle HTTP error (e.g. 403 or 401)
+        setLoading(false);
+        return false;
+      }
+      const data = await res.json();
 
-      localStorage.setItem('transitops_user', JSON.stringify(mockUser));
-      localStorage.setItem('transitops_token', mockToken);
-
-      setUser(mockUser);
-      setToken(mockToken);
+      // Store in localStorage
+      localStorage.setItem('transitops_user', JSON.stringify(data.user));
+      localStorage.setItem('transitops_token', data.token);
+      setUser(data.user);
+      setToken(data.token);
       setLoading(false);
       router.push('/');
       return true;
     } catch (e) {
-      console.error(e);
       setLoading(false);
       return false;
     }

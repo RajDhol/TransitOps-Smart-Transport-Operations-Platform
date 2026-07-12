@@ -21,7 +21,7 @@ export default function LoginPage() {
       setError('Please enter your email address.');
       return;
     }
-    
+
     // Simple email format check
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -41,7 +41,7 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      const success = await login(email, role);
+      const success = await login(email, password, role);
       if (!success) {
         setError('Invalid credentials or authentication error.');
       }
