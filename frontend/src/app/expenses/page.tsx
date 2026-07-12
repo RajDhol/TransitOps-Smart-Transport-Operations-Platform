@@ -47,7 +47,6 @@ export default function FuelExpensesPage() {
   const [expenses, setExpenses] = useState<OtherExpense[]>([
     { id: 1, trip_id: 'TR001', vehicle_reg: 'VAN-05', toll: 120, other: 0, maint: 0, status: 'Available' },
     { id: 2, trip_id: 'TR002', vehicle_reg: 'TRX-12', toll: 340, other: 150, maint: 18000, status: 'Completed' },
-    // Adjustment log to make the mockup total match 34,070 exactly
     { id: 3, trip_id: 'TR003', vehicle_reg: 'MINI-08', toll: 1860, other: 0, maint: 0, status: 'Available' },
   ]);
 
@@ -201,20 +200,18 @@ export default function FuelExpensesPage() {
         </div>
       )}
 
-      {/* Welcome Banner */}
-      <div className="bg-white border border-gray-200 p-6 rounded-md">
-        <p className="text-sm text-gray-500">{FUEL_EXPENSE_TITLES.description}</p>
+      {/* Top Action Row */}
+      <div className="flex justify-end items-center gap-3">
+        <Button onClick={() => { setFormErrors({}); setActiveForm('fuel'); }} size="sm">
+          {FUEL_EXPENSE_TITLES.fuelButton}
+        </Button>
+        <Button variant="outline" onClick={() => { setFormErrors({}); setActiveForm('expense'); }} size="sm">
+          {FUEL_EXPENSE_TITLES.expenseButton}
+        </Button>
       </div>
 
       {/* Fuel Logs Section */}
-      <Card
-        title={FUEL_EXPENSE_TITLES.fuelTitle}
-        headerActions={
-          <Button variant="outline" onClick={() => { setFormErrors({}); setActiveForm('fuel'); }}>
-            {FUEL_EXPENSE_TITLES.fuelButton}
-          </Button>
-        }
-      >
+      <Card title={FUEL_EXPENSE_TITLES.fuelTitle}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -246,14 +243,7 @@ export default function FuelExpensesPage() {
       </Card>
 
       {/* Other Expenses Section */}
-      <Card
-        title={FUEL_EXPENSE_TITLES.expenseTitle}
-        headerActions={
-          <Button variant="outline" onClick={() => { setFormErrors({}); setActiveForm('expense'); }}>
-            {FUEL_EXPENSE_TITLES.expenseButton}
-          </Button>
-        }
-      >
+      <Card title={FUEL_EXPENSE_TITLES.expenseTitle}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>

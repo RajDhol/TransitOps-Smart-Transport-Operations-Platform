@@ -29,11 +29,11 @@ export default function Header() {
   const pageDescription = PAGE_DESCRIPTIONS[pathname] || 'Smart Transport Operations Platform';
 
   return (
-    <header className="h-20 border-b border-gray-200 bg-white flex items-center justify-between px-8 font-sans text-gray-900">
+    <header className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-8 font-sans text-gray-900">
       {/* Dynamic Title and Subtitle */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-gray-900">{pageTitle}</h1>
-        <p className="text-[11px] text-gray-400 mt-0.5 font-medium">{pageDescription}</p>
+      <div className="flex flex-col justify-center">
+        <h1 className="text-lg font-bold tracking-tight text-gray-900 leading-tight">{pageTitle}</h1>
+        <p className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">{pageDescription}</p>
       </div>
 
       {/* Profile Actions */}
