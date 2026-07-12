@@ -203,16 +203,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Welcome Banner */}
-      <div className="bg-white border border-gray-200 p-6 rounded-md flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-          <p className="text-gray-500 mt-1">{DASHBOARD_TITLES.roleDescription(user.role)}</p>
-        </div>
-        <div className="px-3 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-bold text-gray-600 uppercase tracking-wider">
-          {user.role} View
-        </div>
-      </div>
+
 
       {/* Filter Component */}
       <DashboardFilters

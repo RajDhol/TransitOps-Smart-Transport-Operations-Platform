@@ -8,7 +8,7 @@ import Button from './Button';
 export interface FormFieldSchema {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'password';
+  type: 'text' | 'number' | 'select' | 'password' | 'date';
   placeholder?: string;
   required?: boolean;
   options?: { value: string | number; label: string }[];

@@ -251,7 +251,7 @@ export default function TripManagementPage() {
   });
 
   return (
-    <div className="space-y-8 font-sans text-gray-950 pb-12">
+    <div className="space-y-8 font-sans text-gray-955 pb-12">
       {/* Notifications */}
       {notification && (
         <div
@@ -265,25 +265,17 @@ export default function TripManagementPage() {
         </div>
       )}
 
-      {/* Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-gray-200 p-6 rounded-md">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{TRIP_PAGE_TITLES.header}</h2>
-          <p className="text-sm text-gray-500 mt-1">{TRIP_PAGE_TITLES.description}</p>
-        </div>
-        {/* Only operators can Dispatch new routes */}
-        {isOperator && (
-          <Button onClick={() => { setFormErrors({}); setIsDispatchModalOpen(true); }}>
-            {TRIP_PAGE_TITLES.dispatchButton}
-          </Button>
-        )}
-      </div>
-
       {/* Roster Table */}
       <Card
         title={TRIP_PAGE_TITLES.listTitle}
         headerActions={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto items-center">
+            {/* Added trigger button directly inside table card actions */}
+            {isOperator && (
+              <Button onClick={() => { setFormErrors({}); setIsDispatchModalOpen(true); }} size="sm">
+                {TRIP_PAGE_TITLES.dispatchButton}
+              </Button>
+            )}
             <input
               type="text"
               value={searchQuery}
@@ -346,7 +338,6 @@ export default function TripManagementPage() {
                       {t.status}
                     </Badge>
                   </td>
-                  {/* Hide row action buttons for view-only roles */}
                   {isOperator && (
                     <td className="py-3 text-right flex justify-end gap-2">
                       {t.status === 'Dispatched' && (

@@ -203,8 +203,7 @@ export default function FuelExpensesPage() {
 
       {/* Welcome Banner */}
       <div className="bg-white border border-gray-200 p-6 rounded-md">
-        <h2 className="text-2xl font-bold tracking-tight">{FUEL_EXPENSE_TITLES.header}</h2>
-        <p className="text-sm text-gray-500 mt-1">{FUEL_EXPENSE_TITLES.description}</p>
+        <p className="text-sm text-gray-500">{FUEL_EXPENSE_TITLES.description}</p>
       </div>
 
       {/* Fuel Logs Section */}

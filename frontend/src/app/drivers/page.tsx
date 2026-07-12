@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { INITIAL_DRIVERS, MockDriver } from '../../constants/dashboardContent';
 import {
   DRIVER_PAGE_TITLES,
-  DRIVER_STATUSES,
+  LICENSE_CATEGORIES,
   DRIVER_TABLE_HEADERS,
   DRIVER_FORM_SCHEMA
 } from '../../constants/driverContent';
@@ -16,10 +16,10 @@ import Modal from '../../components/ui/Modal';
 import DynamicForm from '../../components/ui/DynamicForm';
 
 export default function DriverManagementPage() {
-  // Mock drivers pool state
+  // Mock drivers database state
   const [drivers, setDrivers] = useState<MockDriver[]>(INITIAL_DRIVERS);
-
-  // Dialog & Filter toggles
+  
+  // UI Dialog toggles
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -27,42 +27,30 @@ export default function DriverManagementPage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // --- ACTIONS & COMPLIANCE VALIDATIONS ---
+  // --- FORM SUBMIT & COMPLIANCE VALIDATIONS ---
   const handleFormSubmit = (formData: Record<string, string>) => {
     setFormErrors({});
     setNotification(null);
 
     const errors: Record<string, string> = {};
 
-    // 1. Validations checks
     if (!formData.name?.trim()) {
-      errors.name = 'Driver name is required.';
+      errors.name = 'Driver full name is required.';
     }
 
     if (!formData.license_number?.trim()) {
       errors.license_number = 'License number is required.';
     } else {
-      // Uniqueness check
       const exists = drivers.some(
-        (d) => (d.license_number || '').toLowerCase() === formData.license_number.trim().toLowerCase()
+        (d) => d.license_number?.toLowerCase() === formData.license_number.trim().toLowerCase()
       );
       if (exists) {
         errors.license_number = 'This license number is already registered.';
       }
     }
 
-    if (!formData.license_expiry_date?.trim()) {
-      errors.license_expiry_date = 'License expiry date is required.';
-    } else {
-      // Simple date format regex validation YYYY-MM-DD
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(formData.license_expiry_date.trim())) {
-        errors.license_expiry_date = 'Expiry date must be in YYYY-MM-DD format.';
-      }
-    }
-
-    if (!formData.contact_number?.trim()) {
-      errors.contact_number = 'Contact number is required.';
+    if (!formData.license_expiry) {
+      errors.license_expiry = 'License expiry date is required.';
     }
 
     const score = parseInt(formData.safety_score);
@@ -70,56 +58,50 @@ export default function DriverManagementPage() {
       errors.safety_score = 'Safety score must be an integer between 0 and 100.';
     }
 
+    if (!formData.contact_number?.trim()) {
+      errors.contact_number = 'Contact phone number is required.';
+    }
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
 
-    // 2. Add driver & close modal
-    const newDriverId = drivers.length + 1;
     const newDriver: MockDriver = {
-      id: newDriverId,
+      id: drivers.length + 1,
       name: formData.name.trim(),
-      license_expiry: formData.license_expiry_date.trim(),
+      license_number: formData.license_number.toUpperCase().trim(),
+      license_category: formData.license_category,
+      license_expiry: formData.license_expiry,
+      contact_number: formData.contact_number.trim(),
       safety_score: score,
       status: formData.status as any,
     };
 
-    // Inject temporary license number for mock records
-    (newDriver as any).license_number = formData.license_number.toUpperCase().trim();
-    (newDriver as any).license_category = formData.license_category;
-    (newDriver as any).contact_number = formData.contact_number.trim();
-
-    setDrivers([...drivers, newDriver]);
+    setDrivers([newDriver, ...drivers]);
     setIsModalOpen(false);
     setNotification({
       type: 'success',
-      message: `Driver ${newDriver.name} registered successfully in the pool.`,
+      message: `Driver profile for ${newDriver.name} added successfully. Compliance rules initialized.`,
     });
   };
 
-  // --- COMPLIANCE TOGGLE BUTTONS ---
-  const handleToggleDriverStatus = (id: number) => {
+  const handleSuspendDriver = (id: number) => {
     setDrivers(
-      drivers.map((d) => {
-        if (d.id === id) {
-          const nextStatus = d.status === 'Suspended' ? 'Available' : 'Suspended';
-          return { ...d, status: nextStatus };
-        }
-        return d;
-      })
+      drivers.map((d) => (d.id === id ? { ...d, status: 'Suspended' } : d))
     );
   };
 
-  const handleDeleteDriver = (id: number) => {
-    setDrivers(drivers.filter((d) => d.id !== id));
+  const handleActivateDriver = (id: number) => {
+    setDrivers(
+      drivers.map((d) => (d.id === id ? { ...d, status: 'Available' } : d))
+    );
   };
 
-  // --- FILTERS LOGIC ---
   const filteredDrivers = drivers.filter((d) => {
     const matchesSearch =
       d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ((d as any).license_number || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (d.license_number?.toLowerCase() || '').includes(searchQuery.toLowerCase());
     const matchesStatus = !statusFilter || d.status === statusFilter;
 
     return matchesSearch && matchesStatus;
@@ -130,36 +112,25 @@ export default function DriverManagementPage() {
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
-            notification.type === 'success'
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
         >
-          <span>{notification.type === 'success' ? '✓' : '!'}</span>
+          <span>✓</span>
           <div>
-            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
+            <p className="font-semibold">Success</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
       )}
-
-      {/* Header Panel */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-gray-200 p-6 rounded-md">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{DRIVER_PAGE_TITLES.header}</h2>
-          <p className="text-sm text-gray-500 mt-1">{DRIVER_PAGE_TITLES.description}</p>
-        </div>
-        <Button onClick={() => setIsModalOpen(true)}>
-          {DRIVER_PAGE_TITLES.registerButton}
-        </Button>
-      </div>
 
       {/* Roster Table */}
       <Card
         title={DRIVER_PAGE_TITLES.listTitle}
         headerActions={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto items-center">
+            {/* Added trigger button directly inside table card actions */}
+            <Button onClick={() => setIsModalOpen(true)} size="sm">
+              {DRIVER_PAGE_TITLES.registerButton}
+            </Button>
             <input
               type="text"
               value={searchQuery}
@@ -173,11 +144,10 @@ export default function DriverManagementPage() {
               className="px-3 py-1.5 border border-gray-200 text-xs rounded outline-none bg-white"
             >
               <option value="">All Statuses</option>
-              {DRIVER_STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
+              <option value="Available">Available</option>
+              <option value="On Trip">On Trip</option>
+              <option value="Off Duty">Off Duty</option>
+              <option value="Suspended">Suspended</option>
             </select>
           </div>
         }
@@ -197,19 +167,19 @@ export default function DriverManagementPage() {
               {filteredDrivers.map((d) => (
                 <tr key={d.id} className="text-gray-700">
                   <td className="py-3 font-semibold">#{d.id}</td>
-                  <td className="py-3 font-semibold">{d.name}</td>
-                  <td className="py-3">{(d as any).license_number || 'DL-TX-992014'}</td>
-                  <td className="py-3">{(d as any).license_category || 'Class A CDL'}</td>
-                  <td className="py-3">{d.license_expiry}</td>
-                  <td className="py-3">{(d as any).contact_number || '+1-555-0103'}</td>
+                  <td className="py-3 font-semibold text-gray-905">{d.name}</td>
+                  <td className="py-3 font-mono text-xs">{d.license_number || '—'}</td>
+                  <td className="py-3">{d.license_category || 'Class B CDL'}</td>
+                  <td className="py-3 font-medium">{d.license_expiry}</td>
+                  <td className="py-3 text-xs">{d.contact_number || '—'}</td>
                   <td className="py-3">
                     <span
-                      className={`font-bold ${
-                        d.safety_score >= 90
+                      className={`font-semibold ${
+                        d.safety_score >= 85
                           ? 'text-green-600'
-                          : d.safety_score >= 75
-                          ? 'text-amber-600'
-                          : 'text-red-600'
+                          : d.safety_score >= 70
+                          ? 'text-amber-500'
+                          : 'text-red-500'
                       }`}
                     >
                       {d.safety_score} / 100
@@ -222,25 +192,32 @@ export default function DriverManagementPage() {
                           ? 'success'
                           : d.status === 'On Trip'
                           ? 'info'
-                          : d.status === 'Suspended'
-                          ? 'error'
-                          : 'gray'
+                          : d.status === 'Off Duty'
+                          ? 'gray'
+                          : 'error'
                       }
                     >
                       {d.status}
                     </Badge>
                   </td>
                   <td className="py-3 text-right flex justify-end gap-2">
-                    <Button
-                      variant={d.status === 'Suspended' ? 'success' : 'danger'}
-                      size="sm"
-                      onClick={() => handleToggleDriverStatus(d.id)}
-                    >
-                      {d.status === 'Suspended' ? 'Reactivate' : 'Suspend'}
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleDeleteDriver(d.id)}>
-                      Delete
-                    </Button>
+                    {d.status !== 'Suspended' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSuspendDriver(d.id)}
+                      >
+                        Suspend
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="success"
+                        size="sm"
+                        onClick={() => handleActivateDriver(d.id)}
+                      >
+                        Activate
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -248,7 +225,7 @@ export default function DriverManagementPage() {
               {filteredDrivers.length === 0 && (
                 <tr>
                   <td colSpan={DRIVER_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
-                    No drivers found matching the search query or status filter.
+                    No drivers found matching search or filters.
                   </td>
                 </tr>
               )}
@@ -257,7 +234,7 @@ export default function DriverManagementPage() {
         </div>
       </Card>
 
-      {/* Centralized Registration Modal */}
+      {/* Form Dialog */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={DRIVER_PAGE_TITLES.formTitle}>
         <div className="mb-4">
           <p className="text-sm text-gray-500">{DRIVER_PAGE_TITLES.formSubtitle}</p>
@@ -265,7 +242,7 @@ export default function DriverManagementPage() {
         <DynamicForm
           schema={DRIVER_FORM_SCHEMA}
           onSubmit={handleFormSubmit}
-          submitLabel="Register Driver Profile"
+          submitLabel="Save Driver Profile"
           errors={formErrors}
         />
       </Modal>

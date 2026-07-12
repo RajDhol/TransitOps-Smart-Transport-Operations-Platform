@@ -130,17 +130,6 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-8 font-sans text-gray-900 pb-12">
-      {/* Title Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-gray-200 p-6 rounded-md">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{REPORT_PAGE_TITLES.header}</h2>
-          <p className="text-sm text-gray-500 mt-1">{REPORT_PAGE_TITLES.description}</p>
-        </div>
-        <Button onClick={handleCsvExport}>
-          {REPORT_PAGE_TITLES.exportButton}
-        </Button>
-      </div>
-
       {/* Aggregate stats deck */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat) => (
@@ -154,7 +143,14 @@ export default function ReportsPage() {
       </div>
 
       {/* Roster performance table */}
-      <Card title={REPORT_PAGE_TITLES.tableTitle}>
+      <Card
+        title={REPORT_PAGE_TITLES.tableTitle}
+        headerActions={
+          <Button onClick={handleCsvExport} size="sm">
+            {REPORT_PAGE_TITLES.exportButton}
+          </Button>
+        }
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>

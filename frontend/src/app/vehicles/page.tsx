@@ -131,25 +131,17 @@ export default function VehicleRegistryPage() {
         </div>
       )}
 
-      {/* Page header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-gray-200 p-6 rounded-md">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{VEHICLE_PAGE_TITLES.header}</h2>
-          <p className="text-sm text-gray-500 mt-1">{VEHICLE_PAGE_TITLES.description}</p>
-        </div>
-        {/* Only show Register button to Fleet Managers */}
-        {isManager && (
-          <Button onClick={() => setIsModalOpen(true)}>
-            {VEHICLE_PAGE_TITLES.registerButton}
-          </Button>
-        )}
-      </div>
-
       {/* Roster list */}
       <Card
         title={VEHICLE_PAGE_TITLES.listTitle}
         headerActions={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto items-center">
+            {/* Action button placed inside card header actions */}
+            {isManager && (
+              <Button onClick={() => setIsModalOpen(true)} size="sm">
+                {VEHICLE_PAGE_TITLES.registerButton}
+              </Button>
+            )}
             <input
               type="text"
               value={searchQuery}
@@ -188,7 +180,6 @@ export default function VehicleRegistryPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider">
-                {/* Dynamically strip Actions header if not Manager */}
                 {VEHICLE_TABLE_HEADERS.filter((h) => h !== 'Actions' || isManager).map((header) => (
                   <th key={header} className="pb-3 last:text-right">
                     {header}
@@ -223,7 +214,6 @@ export default function VehicleRegistryPage() {
                       {v.status}
                     </Badge>
                   </td>
-                  {/* Hide row action buttons for view-only roles */}
                   {isManager && (
                     <td className="py-3 text-right flex justify-end gap-2">
                       {v.status !== 'Retired' && (
@@ -259,7 +249,7 @@ export default function VehicleRegistryPage() {
         </div>
       </Card>
 
-      {/* Registration Modal (Only loadable for Manager) */}
+      {/* Registration Modal */}
       {isManager && (
         <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={VEHICLE_PAGE_TITLES.formTitle}>
           <div className="mb-4">
