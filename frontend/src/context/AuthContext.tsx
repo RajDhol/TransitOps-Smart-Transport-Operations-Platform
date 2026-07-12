@@ -15,7 +15,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string, role: UserRole) => Promise<boolean>;
+  login: (email: string, password: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string, role: UserRole): Promise<boolean> => {
+  const login = async (email: string, password: string, role: UserRole): Promise<{ success: boolean; error?: string }> => {
     setLoading(true);
     try {
       const res = await fetch('http://localhost:8000/api/auth/login', {
@@ -49,8 +49,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (!res.ok) {
         // Handle HTTP error (e.g. 403 or 401)
+        const errorData = await res.json().catch(() => null);
         setLoading(false);
-        return false;
+        return { success: false, error: errorData?.detail || 'Invalid credentials or authentication error.' };
       }
       const data = await res.json();
 
@@ -61,10 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(data.token);
       setLoading(false);
       router.push('/');
-      return true;
+      return { success: true };
     } catch (e) {
       setLoading(false);
-      return false;
+      return { success: false, error: 'Server connection error. Please try again.' };
     }
   };
 
