@@ -73,6 +73,23 @@ CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
 CREATE INDEX IF NOT EXISTS idx_drivers_license_number ON drivers(license_number);
 
 -- ============================================================================
+-- 4A. DRIVER SAFETY EVENTS
+-- Positive points reward safe behaviour; negative points record penalties.
+-- The driver safety_score is recalculated and constrained to the 0-100 range.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS driver_safety_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    driver_id INTEGER NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    points INTEGER NOT NULL CHECK (points BETWEEN -100 AND 100 AND points != 0),
+    notes TEXT NULL,
+    event_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_safety_events_driver_id ON driver_safety_events(driver_id);
+
+-- ============================================================================
 -- 5. TRIPS TABLE
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS trips (

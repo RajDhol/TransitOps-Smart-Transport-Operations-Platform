@@ -161,6 +161,22 @@ class DriverRegistrationResponse(BaseModel):
     status: str
 
 
+class SafetyEventCreate(BaseModel):
+    event_type: str
+    points: int
+    notes: str | None = None
+    event_date: date | None = None
+
+
+class SafetyEventResponse(BaseModel):
+    id: int
+    driver_id: int
+    event_type: str
+    points: int
+    safety_score: int
+    event_date: date
+
+
 class MaintenanceCreate(BaseModel):
     vehicle_reg: str
     service_date: date
@@ -489,6 +505,38 @@ def register_driver(driver: DriverCreate) -> DriverRegistrationResponse:
              driver.contact_number.strip(), driver.safety_score),
         )
     return DriverRegistrationResponse(id=cursor.lastrowid, name=driver.name.strip(), status="Available")
+
+
+@app.post("/api/drivers/{driver_id}/safety-events", response_model=SafetyEventResponse, status_code=status.HTTP_201_CREATED)
+def record_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEventResponse:
+    """Record a safety event and update the driver's score, bounded from 0 to 100."""
+    if not -100 <= event.points <= 100 or event.points == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Safety event points must be between -100 and 100 and cannot be zero",
+        )
+
+    with connection() as database:
+        driver = database.execute("SELECT safety_score FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+        safety_score = max(0, min(100, int(driver["safety_score"]) + event.points))
+        event_date = event.event_date or date.today()
+        cursor = database.execute(
+            """INSERT INTO driver_safety_events (driver_id, event_type, points, notes, event_date)
+               VALUES (?, ?, ?, ?, ?)""",
+            (driver_id, event.event_type.strip(), event.points, event.notes, event_date.isoformat()),
+        )
+        database.execute("UPDATE drivers SET safety_score = ? WHERE id = ?", (safety_score, driver_id))
+
+    return SafetyEventResponse(
+        id=cursor.lastrowid,
+        driver_id=driver_id,
+        event_type=event.event_type.strip(),
+        points=event.points,
+        safety_score=safety_score,
+        event_date=event_date,
+    )
 
 
 @app.post("/api/maintenance", response_model=MaintenanceCreateResponse, status_code=status.HTTP_201_CREATED)
