@@ -1,14 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { INITIAL_VEHICLES, MockVehicle } from '../../constants/dashboardContent';
-import {
-  FUEL_EXPENSE_TITLES,
-  FUEL_TABLE_HEADERS,
-  EXPENSE_TABLE_HEADERS,
-  FUEL_FORM_SCHEMA,
-  EXPENSE_FORM_SCHEMA
-} from '../../constants/fuelExpenseContent';
+import React, { useState, useEffect } from 'react';
+import { FUEL_EXPENSE_TITLES } from '../../constants/fuelExpenseContent';
 
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -16,80 +9,170 @@ import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../../components/ui/DynamicForm';
 
+interface Vehicle {
+  registration_number: string;
+  model: string;
+  type: string;
+  status: string;
+}
+
 interface FuelLog {
   id: number;
   vehicle_reg: string;
-  date: string;
   liters: number;
   cost: number;
+  log_date: string;
 }
 
 interface OtherExpense {
   id: number;
-  trip_id: string;
   vehicle_reg: string;
-  toll: number;
-  other: number;
-  maint: number;
-  status: 'Available' | 'Completed';
+  category: string;
+  cost: number;
+  expense_date: string;
+  notes: string | null;
 }
 
 export default function FuelExpensesPage() {
-  // Mock states
-  const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
-  
-  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([
-    { id: 1, vehicle_reg: 'VAN-05', date: '05 Jul 2026', liters: 42, cost: 3150 },
-    { id: 2, vehicle_reg: 'TRUCK-11', date: '06 Jul 2026', liters: 110, cost: 8400 },
-    { id: 3, vehicle_reg: 'MINI-08', date: '06 Jul 2026', liters: 28, cost: 2050 },
-  ]);
-
-  const [expenses, setExpenses] = useState<OtherExpense[]>([
-    { id: 1, trip_id: 'TR001', vehicle_reg: 'VAN-05', toll: 120, other: 0, maint: 0, status: 'Available' },
-    { id: 2, trip_id: 'TR002', vehicle_reg: 'TRX-12', toll: 340, other: 150, maint: 18000, status: 'Completed' },
-    { id: 3, trip_id: 'TR003', vehicle_reg: 'MINI-08', toll: 1860, other: 0, maint: 0, status: 'Available' },
-  ]);
+  // Core states
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([]);
+  const [expenses, setExpenses] = useState<OtherExpense[]>([]);
+  const [currencySymbol, setCurrencySymbol] = useState('Rs.');
+  const [isLoading, setIsLoading] = useState(true);
 
   // Dialog control
   const [activeForm, setActiveForm] = useState<'fuel' | 'expense' | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // --- API DATA FETCH ---
+  const fetchData = async () => {
+    try {
+      const [vRes, fRes, eRes, sRes] = await Promise.all([
+        fetch('http://localhost:8000/api/vehicles'),
+        fetch('http://localhost:8000/api/fuel-logs'),
+        fetch('http://localhost:8000/api/expenses'),
+        fetch('http://localhost:8000/api/settings')
+      ]);
+
+      if (vRes.ok && fRes.ok && eRes.ok) {
+        setVehicles(await vRes.json());
+        setFuelLogs(await fRes.json());
+        setExpenses(await eRes.json());
+      }
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setCurrencySymbol(sData.currency?.includes('INR') ? 'Rs. ' : '$');
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Failed to synchronize fuel and expenses with the server.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Helper helper to get today's date in YYYY-MM-DD
+  const getTodayString = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   // --- DYNAMIC FORM OPTIONS ---
   const getFuelSchema = (): FormFieldSchema[] => {
+    const activeVehicles = vehicles.filter(v => v.status !== 'Retired');
     return [
       {
         name: 'vehicle_reg',
         label: 'Select Vehicle',
         type: 'select',
-        options: vehicles.map((v) => ({
+        options: activeVehicles.map((v) => ({
           value: v.registration_number,
           label: `${v.registration_number} (${v.model})`,
         })),
         required: true,
       },
-      ...FUEL_FORM_SCHEMA,
+      {
+        name: 'log_date',
+        label: 'Refill Date',
+        type: 'date',
+        required: true,
+      },
+      {
+        name: 'liters',
+        label: 'Liters Refilled (L)',
+        type: 'number',
+        placeholder: 'e.g. 42',
+        required: true,
+      },
+      {
+        name: 'cost',
+        label: `Fuel Cost (${currencySymbol.trim()})`,
+        type: 'number',
+        placeholder: 'e.g. 3150',
+        required: true,
+      }
     ];
   };
 
   const getExpenseSchema = (): FormFieldSchema[] => {
+    const activeVehicles = vehicles.filter(v => v.status !== 'Retired');
     return [
       {
         name: 'vehicle_reg',
         label: 'Select Vehicle',
         type: 'select',
-        options: vehicles.map((v) => ({
+        options: activeVehicles.map((v) => ({
           value: v.registration_number,
           label: `${v.registration_number} (${v.model})`,
         })),
         required: true,
       },
-      ...EXPENSE_FORM_SCHEMA,
+      {
+        name: 'category',
+        label: 'Expense Category',
+        type: 'select',
+        options: [
+          { value: 'Toll', label: 'Toll Fees' },
+          { value: 'Insurance', label: 'Insurance' },
+          { value: 'Permit', label: 'Permit & Licenses' },
+          { value: 'Fine', label: 'Fines & Penalties' },
+          { value: 'Other', label: 'Other Miscellaneous' }
+        ],
+        required: true,
+      },
+      {
+        name: 'expense_date',
+        label: 'Expense Date',
+        type: 'date',
+        required: true,
+      },
+      {
+        name: 'cost',
+        label: `Cost (${currencySymbol.trim()})`,
+        type: 'number',
+        placeholder: 'e.g. 120',
+        required: true,
+      },
+      {
+        name: 'notes',
+        label: 'Notes / Remarks',
+        type: 'text',
+        placeholder: 'e.g. Toll taxes paid on NH48',
+        required: false,
+      }
     ];
   };
 
   // --- ACTIONS & SUBMIT VALIDATIONS ---
-  const handleFormSubmit = (formData: Record<string, string>) => {
+  const handleFormSubmit = async (formData: Record<string, string>) => {
     setFormErrors({});
     setNotification(null);
     const errors: Record<string, string> = {};
@@ -103,8 +186,8 @@ export default function FuelExpensesPage() {
       if (isNaN(costVal) || costVal <= 0) {
         errors.cost = 'Fuel cost must be a positive number.';
       }
-      if (!formData.date?.trim()) {
-        errors.date = 'Date is required.';
+      if (!formData.log_date) {
+        errors.log_date = 'Refill date is required.';
       }
 
       if (Object.keys(errors).length > 0) {
@@ -112,37 +195,37 @@ export default function FuelExpensesPage() {
         return;
       }
 
-      const nextId = fuelLogs.length + 1;
-      setFuelLogs([
-        ...fuelLogs,
-        {
-          id: nextId,
-          vehicle_reg: formData.vehicle_reg,
-          date: formData.date.trim(),
-          liters: litersVal,
-          cost: costVal,
-        },
-      ]);
-      setNotification({
-        type: 'success',
-        message: `Fuel log refilled receipt logged successfully for ${formData.vehicle_reg}.`,
-      });
+      try {
+        const res = await fetch('http://localhost:8000/api/fuel-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_reg: formData.vehicle_reg,
+            log_date: formData.log_date,
+            liters: litersVal,
+            cost: costVal,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to log fuel refill.');
+
+        setNotification({
+          type: 'success',
+          message: `Fuel log successfully saved for vehicle ${formData.vehicle_reg}.`,
+        });
+        fetchData();
+      } catch (err: any) {
+        setNotification({ type: 'error', message: err.message });
+      }
 
     } else if (activeForm === 'expense') {
-      if (!formData.trip_id?.trim()) {
-        errors.trip_id = 'Trip ID is required.';
+      const costVal = parseFloat(formData.cost);
+      if (isNaN(costVal) || costVal <= 0) {
+        errors.cost = 'Cost must be a positive number.';
       }
-      const tollVal = parseFloat(formData.toll);
-      if (isNaN(tollVal) || tollVal < 0) {
-        errors.toll = 'Toll cost cannot be negative.';
-      }
-      const otherVal = parseFloat(formData.other);
-      if (isNaN(otherVal) || otherVal < 0) {
-        errors.other = 'Other cost cannot be negative.';
-      }
-      const maintVal = parseFloat(formData.maint);
-      if (isNaN(maintVal) || maintVal < 0) {
-        errors.maint = 'Maintenance cost cannot be negative.';
+      if (!formData.expense_date) {
+        errors.expense_date = 'Expense date is required.';
       }
 
       if (Object.keys(errors).length > 0) {
@@ -150,51 +233,76 @@ export default function FuelExpensesPage() {
         return;
       }
 
-      const nextId = expenses.length + 1;
-      setExpenses([
-        ...expenses,
-        {
-          id: nextId,
-          trip_id: formData.trip_id.toUpperCase().trim(),
-          vehicle_reg: formData.vehicle_reg,
-          toll: tollVal,
-          other: otherVal,
-          maint: maintVal,
-          status: formData.status as any,
-        },
-      ]);
-      setNotification({
-        type: 'success',
-        message: `Expense details successfully logged for trip ${formData.trip_id}.`,
-      });
+      try {
+        const res = await fetch('http://localhost:8000/api/expenses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_reg: formData.vehicle_reg,
+            category: formData.category,
+            cost: costVal,
+            expense_date: formData.expense_date,
+            notes: formData.notes?.trim() || null,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to log expense.');
+
+        setNotification({
+          type: 'success',
+          message: `Operational expense registered successfully under ${formData.category}.`,
+        });
+        fetchData();
+      } catch (err: any) {
+        setNotification({ type: 'error', message: err.message });
+      }
     }
 
     setActiveForm(null);
   };
 
-  const handleDeleteFuel = (id: number) => {
-    setFuelLogs(fuelLogs.filter((f) => f.id !== id));
+  const handleDeleteFuel = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/fuel-logs/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete fuel log.');
+      setNotification({ type: 'success', message: 'Fuel refill log deleted.' });
+      fetchData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
-  const handleDeleteExpense = (id: number) => {
-    setExpenses(expenses.filter((e) => e.id !== id));
+  const handleDeleteExpense = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/expenses/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete expense.');
+      setNotification({ type: 'success', message: 'Operational expense record deleted.' });
+      fetchData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
-  // --- AUTOMATED COST SUM ---
-  const totalCost =
-    fuelLogs.reduce((acc, f) => acc + f.cost, 0) +
-    expenses.reduce((acc, e) => acc + e.toll + e.other + e.maint, 0);
+  // --- AUTOMATED OPERATIONS COST SUM ---
+  const totalFuelCost = fuelLogs.reduce((acc, f) => acc + f.cost, 0);
+  const totalOtherCost = expenses.reduce((acc, e) => acc + e.cost, 0);
+  const grandTotalCost = totalFuelCost + totalOtherCost;
 
   return (
     <div className="space-y-8 font-sans text-gray-900 pb-12">
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
+            notification.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}
         >
-          <span>✓</span>
+          <span>{notification.type === 'success' ? '✓' : '✖'}</span>
           <div>
-            <p className="font-semibold">Action Executed Successfully</p>
+            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
@@ -215,21 +323,31 @@ export default function FuelExpensesPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider">
-                {FUEL_TABLE_HEADERS.map((header) => (
-                  <th key={header} className="pb-3 last:text-right">
-                    {header}
-                  </th>
-                ))}
+              <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider font-semibold">
+                <th className="pb-3">Vehicle</th>
+                <th className="pb-3">Refill Date</th>
+                <th className="pb-3">Quantity</th>
+                <th className="pb-3">Fuel Cost</th>
+                <th className="pb-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {fuelLogs.map((f) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-8 text-gray-400">Loading fuel receipts...</td>
+                </tr>
+              ) : fuelLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-8 text-gray-400">No fuel records logged.</td>
+                </tr>
+              ) : fuelLogs.map((f) => (
                 <tr key={f.id} className="text-gray-700">
                   <td className="py-3 font-semibold">{f.vehicle_reg}</td>
-                  <td className="py-3">{f.date}</td>
-                  <td className="py-3 font-semibold">{f.liters} L</td>
-                  <td className="py-3 font-bold text-gray-900">${f.cost.toLocaleString()}</td>
+                  <td className="py-3">{f.log_date}</td>
+                  <td className="py-3 font-medium">{f.liters.toLocaleString()} L</td>
+                  <td className="py-3 font-bold text-gray-900">
+                    {currencySymbol}{f.cost.toLocaleString()}
+                  </td>
                   <td className="py-3 text-right flex justify-end">
                     <Button variant="danger" size="sm" onClick={() => handleDeleteFuel(f.id)}>
                       Delete
@@ -247,26 +365,44 @@ export default function FuelExpensesPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider">
-                {EXPENSE_TABLE_HEADERS.map((header) => (
-                  <th key={header} className="pb-3 last:text-right">
-                    {header}
-                  </th>
-                ))}
+              <tr className="border-b border-gray-200 text-gray-400 font-bold uppercase text-[10px] tracking-wider font-semibold">
+                <th className="pb-3">Vehicle</th>
+                <th className="pb-3">Date</th>
+                <th className="pb-3">Category</th>
+                <th className="pb-3">Cost</th>
+                <th className="pb-3">Notes</th>
+                <th className="pb-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {expenses.map((e) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-gray-400">Loading expenses...</td>
+                </tr>
+              ) : expenses.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-gray-400">No other expenses logged.</td>
+                </tr>
+              ) : expenses.map((e) => (
                 <tr key={e.id} className="text-gray-700">
-                  <td className="py-3 font-semibold">{e.trip_id}</td>
-                  <td className="py-3 font-mono text-xs">{e.vehicle_reg}</td>
-                  <td className="py-3">${e.toll.toLocaleString()}</td>
-                  <td className="py-3">${e.other.toLocaleString()}</td>
-                  <td className="py-3">${e.maint.toLocaleString()}</td>
+                  <td className="py-3 font-semibold">{e.vehicle_reg}</td>
+                  <td className="py-3 font-medium">{e.expense_date}</td>
                   <td className="py-3">
-                    <Badge color={e.status === 'Available' ? 'success' : 'info'}>
-                      {e.status}
+                    <Badge color={
+                      e.category === 'Toll' ? 'success'
+                        : e.category === 'Insurance' ? 'info'
+                        : e.category === 'Permit' ? 'warning'
+                        : e.category === 'Fine' ? 'error'
+                        : 'gray'
+                    }>
+                      {e.category}
                     </Badge>
+                  </td>
+                  <td className="py-3 font-bold text-gray-900">
+                    {currencySymbol}{e.cost.toLocaleString()}
+                  </td>
+                  <td className="py-3 text-xs max-w-[200px] truncate" title={e.notes || ''}>
+                    {e.notes || '—'}
                   </td>
                   <td className="py-3 text-right flex justify-end">
                     <Button variant="danger" size="sm" onClick={() => handleDeleteExpense(e.id)}>
@@ -283,10 +419,10 @@ export default function FuelExpensesPage() {
       {/* Dynamic Calculated Operations Total Sum */}
       <div className="bg-white border border-gray-200 p-6 rounded-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-          {FUEL_EXPENSE_TITLES.totalLabel}
+          Total Fuel & Overhead Cost
         </span>
         <span className="text-3xl font-black text-amber-500 tracking-tight">
-          ${totalCost.toLocaleString()}
+          {currencySymbol}{grandTotalCost.toLocaleString()}
         </span>
       </div>
 
