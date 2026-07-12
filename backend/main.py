@@ -886,6 +886,37 @@ def complete_maintenance_record(maintenance_id: int) -> MaintenanceCompleteRespo
     )
 
 
+class VehiclePerformanceResponse(BaseModel):
+    registration_number: str
+    model: str
+    acquisition_cost: float
+    maintenance_cost: float
+    fuel_cost: float
+    expense_cost: float
+    revenue: float
+    distance_driven: float
+    fuel_consumed: float
+
+
+@app.get("/api/reports/performance", response_model=list[VehiclePerformanceResponse])
+def get_vehicle_performance_report() -> list[dict]:
+    """Calculate and return ROI metrics and running costs per vehicle."""
+    query = """
+        SELECT v.registration_number, v.model, v.acquisition_cost,
+               COALESCE((SELECT SUM(revenue) FROM trips t WHERE t.vehicle_reg = v.registration_number), 0) AS revenue,
+               COALESCE((SELECT SUM(cost) FROM fuel_logs f WHERE f.vehicle_reg = v.registration_number), 0) AS fuel_cost,
+               COALESCE((SELECT SUM(cost) FROM maintenance_logs m WHERE m.vehicle_reg = v.registration_number), 0) AS maintenance_cost,
+               COALESCE((SELECT SUM(cost) FROM expenses e WHERE e.vehicle_reg = v.registration_number), 0) AS expense_cost,
+               COALESCE((SELECT SUM(planned_distance) FROM trips t WHERE t.vehicle_reg = v.registration_number AND t.status = 'Completed'), 0) AS distance_driven,
+               COALESCE((SELECT SUM(fuel_consumed) FROM trips t WHERE t.vehicle_reg = v.registration_number AND t.status = 'Completed'), 0) AS fuel_consumed
+        FROM vehicles v
+        ORDER BY v.registration_number
+    """
+    with connection() as database:
+        rows = database.execute(query).fetchall()
+    return [dict(row) for row in rows]
+
+
 @app.get("/api/reports/analytics", response_model=AnalyticsResponse)
 def get_analytics() -> AnalyticsResponse:
     """Calculate fleet operating costs, fuel efficiency, and vehicle ROI."""
