@@ -17,7 +17,6 @@ DATABASE_PATH = Path(os.getenv("DATABASE_PATH", ROOT_DIR / "transitops.db"))
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-development-secret")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRES_HOURS = 8
-DEVELOPMENT_PASSWORD = "securepassword123"
 
 app = FastAPI(title="TransitOps API", version="0.1.0")
 app.add_middleware(
@@ -64,15 +63,6 @@ def initialize_database() -> None:
         database.executescript((ROOT_DIR / "schema.sql").read_text(encoding="utf-8"))
         database.executescript((ROOT_DIR / "seed_data.sql").read_text(encoding="utf-8"))
 
-        # The supplied seed hashes are placeholders. Set a known development password
-        # so the seeded accounts can be exercised locally.
-        password_hash = bcrypt.hashpw(DEVELOPMENT_PASSWORD.encode(), bcrypt.gensalt()).decode()
-        database.execute("UPDATE users SET password_hash = ?", (password_hash,))
-        database.execute(
-            """INSERT OR IGNORE INTO users (id, email, password_hash, role_id, name)
-               VALUES (21, ?, ?, 1, 'Fleet Manager User')""",
-            ("manager@transitops.com", password_hash),
-        )
 
 
 @app.on_event("startup")
