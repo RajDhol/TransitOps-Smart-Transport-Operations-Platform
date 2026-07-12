@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getDashboardStats, DashboardStats } from '../services/authService';
 import {
   INITIAL_VEHICLES,
   INITIAL_DRIVERS,
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
   const [drivers, setDrivers] = useState<MockDriver[]>(INITIAL_DRIVERS);
   const [trips, setTrips] = useState<MockTrip[]>(INITIAL_TRIPS);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
 
   // Filter States
   const [selectedType, setSelectedType] = useState('');
@@ -34,6 +36,20 @@ export default function DashboardPage() {
   // System Notifications
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
+
+  useEffect(() => {
+    if (user?.role !== 'Fleet Manager') return;
+
+    async function fetchStats() {
+      try {
+        const statsData = await getDashboardStats(selectedType, selectedRegion);
+        setDashboardStats(statsData);
+      } catch (err) {
+        console.error('Failed to load dashboard stats:', err);
+      }
+    }
+    fetchStats();
+  }, [selectedType, selectedRegion, user?.role]);
 
   if (!user) return null;
 
@@ -220,6 +236,7 @@ export default function DashboardPage() {
         <FleetManagerDashboard
           vehicles={filteredVehicles}
           drivers={drivers}
+          stats={dashboardStats}
           onRegisterVehicle={(newVehicle) => {
             setVehicles([newVehicle, ...vehicles]);
             setInfoMsg(`Vehicle ${newVehicle.registration_number} registered successfully!`);

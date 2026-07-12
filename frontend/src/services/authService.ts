@@ -58,3 +58,64 @@ export async function getDashboardStats(type?: string, region?: string): Promise
 
     return res.json();
 }
+
+// --- Vehicle Registry API ---
+
+export interface Vehicle {
+    registration_number: string;
+    model: string;
+    type: string;
+    max_load_capacity: number;
+    odometer: number;
+    acquisition_cost: number;
+    status: string;
+}
+
+export interface VehicleCreatePayload {
+    registration_number: string;
+    model: string;
+    type: string;
+    max_load_capacity: number;
+    odometer: number;
+    acquisition_cost: number;
+}
+
+export interface VehicleRegistrationResponse {
+    registration_number: string;
+    status: string;
+    message: string;
+}
+
+export async function getVehicles(status?: string, type?: string): Promise<Vehicle[]> {
+    const params = new URLSearchParams();
+    if (status) params.append("status", status);
+    if (type) params.append("type", type);
+
+    const res = await fetch(`${API_BASE_URL}/api/vehicles?${params.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.detail || "Failed to load vehicles");
+    }
+
+    return res.json();
+}
+
+export async function registerVehicle(vehicle: VehicleCreatePayload): Promise<VehicleRegistrationResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/vehicles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vehicle),
+    });
+
+    if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        // Preserve 400 (duplicate) and 422 (invalid values) messages exactly as backend sends
+        throw new Error(errorData?.detail || "Failed to register vehicle");
+    }
+
+    return res.json();
+}
