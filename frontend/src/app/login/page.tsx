@@ -41,9 +41,9 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      const success = await login(email, password, role);
-      if (!success) {
-        setError('Invalid credentials or authentication error.');
+      const res = await login(email, password, role);
+      if (!res.success) {
+        setError(res.error || 'Invalid credentials or authentication error.');
       }
     } catch (err) {
       setError('Server connection error. Please try again.');

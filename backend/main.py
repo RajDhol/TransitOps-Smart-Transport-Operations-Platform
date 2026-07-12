@@ -3,7 +3,7 @@
 import os
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -136,8 +136,54 @@ class TripCompleteRequest(BaseModel):
     revenue: float
 
 
-def format_num(val: float) -> str:
-    return f"{int(val)}" if val == int(val) else f"{val}"
+class DriverCreate(BaseModel):
+    name: str
+    license_number: str
+    license_category: str
+    license_expiry_date: date
+    contact_number: str
+    safety_score: int = 100
+
+
+class DriverResponse(DriverCreate):
+    id: int
+    status: str
+
+
+class DriverRegistrationResponse(BaseModel):
+    id: int
+    name: str
+    status: str
+
+
+class MaintenanceCreate(BaseModel):
+    vehicle_reg: str
+    service_date: date
+    description: str
+    cost: float
+
+
+class MaintenanceCreateResponse(BaseModel):
+    maintenance_id: int
+    vehicle_status: str
+
+
+class MaintenanceCompleteResponse(BaseModel):
+    maintenance_id: int
+    status: str
+    vehicle_status: str
+
+
+class AnalyticsResponse(BaseModel):
+    total_operational_cost: float
+    total_maintenance_cost: float
+    total_fuel_cost: float
+    fuel_efficiency_km_per_liter: float
+    vehicle_roi: dict[str, float]
+
+
+def format_num(value: float) -> str:
+    return f"{int(value)}" if value == int(value) else f"{value}"
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -159,10 +205,15 @@ def login(credentials: LoginRequest) -> LoginResponse:
     if database_role != credentials.role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This account belongs to the '{database_role}' role. Please choose your correct role.",
+            detail="Access denied. The selected role is not authorized for this account.",
         )
 
-    response_user = UserResponse(id=user["id"], name=user["name"], email=user["email"], role=user["role"])
+    response_user = UserResponse(
+        id=user["id"],
+        name=user["name"],
+        email=user["email"],
+        role=database_role,
+    )
     expires_at = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRES_HOURS)
     token = jwt.encode(
         {"sub": str(response_user.id), "email": response_user.email, "role": response_user.role, "exp": expires_at},
@@ -320,128 +371,206 @@ def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
 
 @app.post("/api/trips", response_model=TripCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
-    """Create a draft trip after validating vehicle and driver capacity."""
+    """Create a draft trip after validating vehicle load capacity."""
     if trip.cargo_weight <= 0 or trip.planned_distance <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Weight and distance must be positive")
 
     with connection() as database:
         vehicle = database.execute(
-            "SELECT registration_number, max_load_capacity, status FROM vehicles WHERE registration_number = ?",
+            "SELECT registration_number, max_load_capacity FROM vehicles WHERE registration_number = ?",
             (trip.vehicle_reg.strip(),),
         ).fetchone()
         if not vehicle:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
-
-        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (trip.driver_id,)).fetchone()
-        if not driver:
+        if not database.execute("SELECT 1 FROM drivers WHERE id = ?", (trip.driver_id,)).fetchone():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
-
         if trip.cargo_weight > vehicle["max_load_capacity"]:
-            w_str = format_num(trip.cargo_weight)
-            cap_str = format_num(vehicle["max_load_capacity"])
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cargo weight ({w_str}kg) exceeds vehicle load capacity ({cap_str}kg)",
+                detail=(f"Cargo weight ({format_num(trip.cargo_weight)}kg) exceeds vehicle load capacity "
+                        f"({format_num(vehicle['max_load_capacity'])}kg)"),
             )
-
         cursor = database.execute(
-            """INSERT INTO trips
-               (source, destination, vehicle_reg, driver_id, cargo_weight, planned_distance, status)
+            """INSERT INTO trips (source, destination, vehicle_reg, driver_id, cargo_weight, planned_distance, status)
                VALUES (?, ?, ?, ?, ?, ?, 'Draft')""",
-            (
-                trip.source.strip(),
-                trip.destination.strip(),
-                trip.vehicle_reg.strip(),
-                trip.driver_id,
-                trip.cargo_weight,
-                trip.planned_distance,
-            ),
+            (trip.source.strip(), trip.destination.strip(), trip.vehicle_reg.strip(), trip.driver_id,
+             trip.cargo_weight, trip.planned_distance),
         )
-        trip_id = cursor.lastrowid
-
-    return TripCreateResponse(trip_id=trip_id, status="Draft")
+    return TripCreateResponse(trip_id=cursor.lastrowid, status="Draft")
 
 
-@app.post("/api/trips/{id}/dispatch", response_model=TripStatusUpdateResponse)
-def dispatch_trip(id: int) -> TripStatusUpdateResponse:
-    """Dispatch a drafted trip and automatically switch vehicle and driver status to On Trip."""
+@app.post("/api/trips/{trip_id}/dispatch", response_model=TripStatusUpdateResponse)
+def dispatch_trip(trip_id: int) -> TripStatusUpdateResponse:
+    """Dispatch a draft trip and switch its vehicle and driver to On Trip."""
     with connection() as database:
-        trip = database.execute(
-            "SELECT id, vehicle_reg, driver_id, status FROM trips WHERE id = ?", (id,)
-        ).fetchone()
+        trip = database.execute("SELECT id, vehicle_reg, driver_id, status FROM trips WHERE id = ?", (trip_id,)).fetchone()
         if not trip:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
         if trip["status"] != "Draft":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Draft trips can be dispatched")
 
         driver = database.execute(
-            "SELECT id, status, license_expiry_date FROM drivers WHERE id = ?", (trip["driver_id"],)
+            "SELECT status, license_expiry_date FROM drivers WHERE id = ?", (trip["driver_id"],)
         ).fetchone()
         if not driver:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
-
-        is_expired = False
         try:
-            exp_date = datetime.strptime(driver["license_expiry_date"], "%Y-%m-%d").date()
-            if exp_date < datetime.now(timezone.utc).date():
-                is_expired = True
-        except Exception:
-            pass
-
-        if driver["status"] == "Suspended" or is_expired:
+            license_expired = date.fromisoformat(driver["license_expiry_date"]) < datetime.now(timezone.utc).date()
+        except ValueError:
+            license_expired = True
+        if driver["status"] == "Suspended" or license_expired:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Driver is currently Suspended or has an expired license.",
             )
 
-        vehicle = database.execute(
-            "SELECT registration_number, status FROM vehicles WHERE registration_number = ?",
-            (trip["vehicle_reg"],),
-        ).fetchone()
-        if not vehicle:
+        if not database.execute(
+            "SELECT 1 FROM vehicles WHERE registration_number = ?", (trip["vehicle_reg"],)
+        ).fetchone():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
-
-        database.execute("UPDATE trips SET status = 'Dispatched' WHERE id = ?", (id,))
+        database.execute("UPDATE trips SET status = 'Dispatched' WHERE id = ?", (trip_id,))
         database.execute("UPDATE vehicles SET status = 'On Trip' WHERE registration_number = ?", (trip["vehicle_reg"],))
         database.execute("UPDATE drivers SET status = 'On Trip' WHERE id = ?", (trip["driver_id"],))
 
-    return TripStatusUpdateResponse(
-        trip_id=id,
-        status="Dispatched",
-        vehicle_status="On Trip",
-        driver_status="On Trip",
-    )
+    return TripStatusUpdateResponse(trip_id=trip_id, status="Dispatched", vehicle_status="On Trip", driver_status="On Trip")
 
 
-@app.post("/api/trips/{id}/complete", response_model=TripStatusUpdateResponse)
-def complete_trip(id: int, request: TripCompleteRequest) -> TripStatusUpdateResponse:
-    """Complete an active trip by logging final mileage, fuel, and restoring vehicle and driver to Available."""
+@app.post("/api/trips/{trip_id}/complete", response_model=TripStatusUpdateResponse)
+def complete_trip(trip_id: int, request: TripCompleteRequest) -> TripStatusUpdateResponse:
+    """Complete a dispatched trip and restore its vehicle and driver to Available."""
     with connection() as database:
-        trip = database.execute(
-            "SELECT id, vehicle_reg, driver_id, status FROM trips WHERE id = ?", (id,)
-        ).fetchone()
+        trip = database.execute("SELECT vehicle_reg, driver_id, status FROM trips WHERE id = ?", (trip_id,)).fetchone()
         if not trip:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
         if trip["status"] != "Dispatched":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Dispatched trips can be completed")
-
         database.execute(
-            """UPDATE trips
-               SET final_odometer = ?, fuel_consumed = ?, revenue = ?, status = 'Completed'
-               WHERE id = ?""",
-            (request.final_odometer, request.fuel_consumed_liters, request.revenue, id),
+            """UPDATE trips SET final_odometer = ?, fuel_consumed = ?, revenue = ?, status = 'Completed' WHERE id = ?""",
+            (request.final_odometer, request.fuel_consumed_liters, request.revenue, trip_id),
         )
         database.execute(
             "UPDATE vehicles SET odometer = ?, status = 'Available' WHERE registration_number = ?",
             (request.final_odometer, trip["vehicle_reg"]),
         )
         database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (trip["driver_id"],))
+    return TripStatusUpdateResponse(trip_id=trip_id, status="Completed", vehicle_status="Available", driver_status="Available")
 
-    return TripStatusUpdateResponse(
-        trip_id=id,
+
+@app.get("/api/drivers", response_model=list[DriverResponse])
+def list_drivers() -> list[dict]:
+    """List all driver profiles."""
+    with connection() as database:
+        rows = database.execute(
+            """SELECT id, name, license_number, license_category, license_expiry_date,
+                      contact_number, safety_score, status FROM drivers ORDER BY id"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/drivers", response_model=DriverRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_driver(driver: DriverCreate) -> DriverRegistrationResponse:
+    """Create a driver profile with the default Available status."""
+    if not 0 <= driver.safety_score <= 100:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Safety score must be between 0 and 100")
+    license_number = driver.license_number.strip()
+    with connection() as database:
+        if database.execute("SELECT 1 FROM drivers WHERE license_number = ?", (license_number,)).fetchone():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Driver license number must be unique")
+        cursor = database.execute(
+            """INSERT INTO drivers
+               (name, license_number, license_category, license_expiry_date, contact_number, safety_score, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'Available')""",
+            (driver.name.strip(), license_number, driver.license_category.strip(), driver.license_expiry_date.isoformat(),
+             driver.contact_number.strip(), driver.safety_score),
+        )
+    return DriverRegistrationResponse(id=cursor.lastrowid, name=driver.name.strip(), status="Available")
+
+
+@app.post("/api/maintenance", response_model=MaintenanceCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_maintenance_record(maintenance: MaintenanceCreate) -> MaintenanceCreateResponse:
+    """Create an active maintenance record and place the vehicle in the shop."""
+    if maintenance.cost < 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Maintenance cost cannot be negative")
+
+    vehicle_reg = maintenance.vehicle_reg.strip()
+    with connection() as database:
+        if not database.execute(
+            "SELECT 1 FROM vehicles WHERE registration_number = ?", (vehicle_reg,)
+        ).fetchone():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+        cursor = database.execute(
+            """INSERT INTO maintenance_logs (vehicle_reg, service_date, description, cost, status)
+               VALUES (?, ?, ?, ?, 'Active')""",
+            (vehicle_reg, maintenance.service_date.isoformat(), maintenance.description.strip(), maintenance.cost),
+        )
+        database.execute("UPDATE vehicles SET status = 'In Shop' WHERE registration_number = ?", (vehicle_reg,))
+
+    return MaintenanceCreateResponse(maintenance_id=cursor.lastrowid, vehicle_status="In Shop")
+
+
+@app.post("/api/maintenance/{maintenance_id}/complete", response_model=MaintenanceCompleteResponse)
+def complete_maintenance_record(maintenance_id: int) -> MaintenanceCompleteResponse:
+    """Complete an active maintenance record and restore vehicle availability."""
+    with connection() as database:
+        maintenance = database.execute(
+            "SELECT id, vehicle_reg, status FROM maintenance_logs WHERE id = ?", (maintenance_id,)
+        ).fetchone()
+        if not maintenance:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance record not found")
+        if maintenance["status"] != "Active":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Active maintenance records can be completed")
+        database.execute("UPDATE maintenance_logs SET status = 'Completed' WHERE id = ?", (maintenance_id,))
+        database.execute(
+            "UPDATE vehicles SET status = 'Available' WHERE registration_number = ?", (maintenance["vehicle_reg"],)
+        )
+
+    return MaintenanceCompleteResponse(
+        maintenance_id=maintenance_id,
         status="Completed",
         vehicle_status="Available",
-        driver_status="Available",
+    )
+
+
+@app.get("/api/reports/analytics", response_model=AnalyticsResponse)
+def get_analytics() -> AnalyticsResponse:
+    """Calculate fleet operating costs, fuel efficiency, and vehicle ROI."""
+    with connection() as database:
+        maintenance_cost = float(database.execute(
+            "SELECT COALESCE(SUM(cost), 0) FROM maintenance_logs"
+        ).fetchone()[0])
+        fuel_cost = float(database.execute(
+            "SELECT COALESCE(SUM(cost), 0) FROM fuel_logs"
+        ).fetchone()[0])
+        expense_cost = float(database.execute(
+            "SELECT COALESCE(SUM(cost), 0) FROM expenses"
+        ).fetchone()[0])
+        distance, fuel_consumed = database.execute(
+            """SELECT COALESCE(SUM(planned_distance), 0), COALESCE(SUM(fuel_consumed), 0)
+               FROM trips WHERE status = 'Completed' AND fuel_consumed > 0"""
+        ).fetchone()
+        roi_rows = database.execute(
+            """SELECT v.registration_number, v.acquisition_cost,
+                      COALESCE((SELECT SUM(revenue) FROM trips t WHERE t.vehicle_reg = v.registration_number), 0) AS revenue,
+                      COALESCE((SELECT SUM(cost) FROM fuel_logs f WHERE f.vehicle_reg = v.registration_number), 0) AS fuel_cost,
+                      COALESCE((SELECT SUM(cost) FROM maintenance_logs m WHERE m.vehicle_reg = v.registration_number), 0) AS maintenance_cost,
+                      COALESCE((SELECT SUM(cost) FROM expenses e WHERE e.vehicle_reg = v.registration_number), 0) AS expense_cost
+               FROM vehicles v ORDER BY v.registration_number"""
+        ).fetchall()
+
+    vehicle_roi = {
+        row["registration_number"]: round(
+            (float(row["revenue"]) - float(row["fuel_cost"]) - float(row["maintenance_cost"]) - float(row["expense_cost"]))
+            / float(row["acquisition_cost"]),
+            4,
+        ) if float(row["acquisition_cost"]) > 0 else 0.0
+        for row in roi_rows
+    }
+    return AnalyticsResponse(
+        total_operational_cost=round(maintenance_cost + fuel_cost + expense_cost, 2),
+        total_maintenance_cost=round(maintenance_cost, 2),
+        total_fuel_cost=round(fuel_cost, 2),
+        fuel_efficiency_km_per_liter=round(float(distance) / float(fuel_consumed), 2) if fuel_consumed else 0.0,
+        vehicle_roi=vehicle_roi,
     )
 
 
