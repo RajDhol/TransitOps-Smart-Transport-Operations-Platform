@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
-import { INITIAL_VEHICLES, MockVehicle } from '../../constants/dashboardContent';
+import React, { useState, useEffect } from 'react';
 import {
   MAINTENANCE_PAGE_TITLES,
   MAINTENANCE_STATUSES,
@@ -14,7 +13,17 @@ import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm, { FormFieldSchema } from '../../components/ui/DynamicForm';
 
-interface MockMaintenance {
+interface Vehicle {
+  registration_number: string;
+  model: string;
+  type: string;
+  max_load_capacity: number;
+  odometer: number;
+  acquisition_cost: number;
+  status: 'Available' | 'On Trip' | 'In Shop' | 'Retired';
+}
+
+interface Maintenance {
   id: number;
   vehicle_reg: string;
   service_date: string;
@@ -24,12 +33,9 @@ interface MockMaintenance {
 }
 
 export default function MaintenanceLogsPage() {
-  // Core states
-  const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
-  const [maintenances, setMaintenances] = useState<MockMaintenance[]>([
-    { id: 1, vehicle_reg: 'SEMI-01-TX', service_date: '2026-07-10', description: 'Transmission fluid flush and gear inspection', cost: 1240, status: 'Active' },
-    { id: 2, vehicle_reg: 'VAN-05-NY', service_date: '2026-06-15', description: 'Oil change and 4-wheel balancing', cost: 220, status: 'Completed' },
-  ]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Dialog toggles
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -38,6 +44,31 @@ export default function MaintenanceLogsPage() {
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // --- API DATA FETCH ---
+  const fetchData = async () => {
+    try {
+      const [vRes, mRes] = await Promise.all([
+        fetch('http://localhost:8000/api/vehicles'),
+        fetch('http://localhost:8000/api/maintenance')
+      ]);
+
+      if (vRes.ok && mRes.ok) {
+        const vData = await vRes.json();
+        const mData = await mRes.json();
+        setVehicles(vData);
+        setMaintenances(mData);
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Failed to synchronize with server API.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // --- DYNAMIC FORM FIELD BUILDER ---
   const getFormSchema = (): FormFieldSchema[] => {
@@ -62,7 +93,7 @@ export default function MaintenanceLogsPage() {
   };
 
   // --- ACTIONS & TRIGGERS VALIDATION ---
-  const handleFormSubmit = (formData: Record<string, string>) => {
+  const handleFormSubmit = async (formData: Record<string, string>) => {
     setFormErrors({});
     setNotification(null);
     const errors: Record<string, string> = {};
@@ -85,54 +116,52 @@ export default function MaintenanceLogsPage() {
       return;
     }
 
-    const regNo = formData.vehicle_reg;
+    try {
+      const res = await fetch('http://localhost:8000/api/maintenance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicle_reg: formData.vehicle_reg,
+          service_date: formData.service_date,
+          cost: cost,
+          description: formData.description.trim(),
+        }),
+      });
 
-    const newLogId = maintenances.length + 1001;
-    const addedLog: MockMaintenance = {
-      id: newLogId,
-      vehicle_reg: regNo,
-      service_date: formData.service_date,
-      description: formData.description.trim(),
-      cost: cost,
-      status: 'Active',
-    };
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to submit maintenance entry.');
+      }
 
-    setMaintenances([addedLog, ...maintenances]);
-    
-    // TRIGGER: Setting a vehicle to active maintenance sets its status to 'In Shop'
-    setVehicles(
-      vehicles.map((v) => (v.registration_number === regNo ? { ...v, status: 'In Shop' } : v))
-    );
-
-    setIsModalOpen(false);
-    setNotification({
-      type: 'success',
-      message: `Maintenance Ticket #${newLogId} logged. Vehicle ${regNo} status set to In Shop.`,
-    });
+      setNotification({
+        type: 'success',
+        message: `Maintenance Ticket #${data.maintenance_id} logged. Vehicle status set to In Shop.`,
+      });
+      setIsModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
-  const handleCompleteLog = (id: number) => {
-    const target = maintenances.find((m) => m.id === id);
-    if (!target) return;
+  const handleCompleteLog = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/maintenance/${id}/complete`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to close ticket.');
+      }
 
-    setMaintenances(
-      maintenances.map((m) => (m.id === id ? { ...m, status: 'Completed' } : m))
-    );
-
-    // TRIGGER: Closing maintenance restores vehicle status to 'Available' (unless retired)
-    const vehicle = vehicles.find((v) => v.registration_number === target.vehicle_reg);
-    if (vehicle && vehicle.status !== 'Retired') {
-      setVehicles(
-        vehicles.map((v) =>
-          v.registration_number === target.vehicle_reg ? { ...v, status: 'Available' } : v
-        )
-      );
+      setNotification({
+        type: 'success',
+        message: `Maintenance Ticket #${id} marked as Completed. Vehicle is now Available.`,
+      });
+      fetchData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
     }
-
-    setNotification({
-      type: 'success',
-      message: `Maintenance Ticket #${id} marked as Completed. Vehicle ${target.vehicle_reg} is now Available.`,
-    });
   };
 
   // --- FILTERS ---
@@ -150,11 +179,15 @@ export default function MaintenanceLogsPage() {
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
+            notification.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}
         >
-          <span>✓</span>
+          <span>{notification.type === 'success' ? '✓' : '✖'}</span>
           <div>
-            <p className="font-semibold">Success</p>
+            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
@@ -203,7 +236,13 @@ export default function MaintenanceLogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredLogs.map((m) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={MAINTENANCE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    Loading records from database...
+                  </td>
+                </tr>
+              ) : filteredLogs.map((m) => (
                 <tr key={m.id} className="text-gray-700">
                   <td className="py-3 font-semibold">#{m.id}</td>
                   <td className="py-3 font-mono text-xs">{m.vehicle_reg}</td>
@@ -225,7 +264,7 @@ export default function MaintenanceLogsPage() {
                 </tr>
               ))}
 
-              {filteredLogs.length === 0 && (
+              {!isLoading && filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan={MAINTENANCE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
                     No maintenance records found matching filters.

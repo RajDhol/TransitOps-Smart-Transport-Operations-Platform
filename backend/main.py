@@ -754,6 +754,36 @@ def record_safety_event(driver_id: int, event: SafetyEventCreate) -> SafetyEvent
     )
 
 
+class MaintenanceLogResponse(BaseModel):
+    id: int
+    vehicle_reg: str
+    service_date: date
+    description: str
+    cost: float
+    status: str
+
+
+@app.get("/api/maintenance", response_model=list[MaintenanceLogResponse])
+def list_maintenance_records() -> list[dict]:
+    """Retrieve all logged maintenance tickets."""
+    with connection() as database:
+        rows = database.execute(
+            """SELECT id, vehicle_reg, service_date, description, cost, status
+               FROM maintenance_logs ORDER BY id DESC"""
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "vehicle_reg": row["vehicle_reg"],
+            "service_date": date.fromisoformat(row["service_date"]),
+            "description": row["description"],
+            "cost": float(row["cost"]),
+            "status": row["status"],
+        }
+        for row in rows
+    ]
+
+
 @app.post("/api/maintenance", response_model=MaintenanceCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_maintenance_record(maintenance: MaintenanceCreate) -> MaintenanceCreateResponse:
     """Create an active maintenance record and place the vehicle in the shop."""
