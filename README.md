@@ -3,9 +3,10 @@
 TransitOps is an end-to-end smart transport operations platform designed to digitize fleet management, driver dispatch, maintenance logs, expense tracking, and provide real-time operational insights. 
 
 ## 🚀 Technology Stack
-* **Framework**: Next.js (React) + TypeScript (App Router)
+* **Frontend**: Next.js (React) + TypeScript (App Router)
 * **Styling**: TailwindCSS v3 (Flat theme, zero shadows)
-* **Database**: SQLite (using Prisma or Drizzle ORM)
+* **Backend**: Python (FastAPI)
+* **Database**: SQLite (SQLModel / SQLAlchemy ORM)
 
 ## 📦 Key Modules
 1. **Authentication & RBAC**: Roles for Fleet Managers, Drivers, Safety Officers, and Financial Analysts.
