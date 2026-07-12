@@ -109,6 +109,37 @@ class VehicleRegistrationResponse(BaseModel):
     message: str
 
 
+class TripCreateRequest(BaseModel):
+    source: str
+    destination: str
+    vehicle_reg: str
+    driver_id: int
+    cargo_weight: float
+    planned_distance: float
+
+
+class TripCreateResponse(BaseModel):
+    trip_id: int
+    status: str
+
+
+class TripStatusUpdateResponse(BaseModel):
+    trip_id: int
+    status: str
+    vehicle_status: str
+    driver_status: str
+
+
+class TripCompleteRequest(BaseModel):
+    final_odometer: float
+    fuel_consumed_liters: float
+    revenue: float
+
+
+def format_num(val: float) -> str:
+    return f"{int(val)}" if val == int(val) else f"{val}"
+
+
 @app.post("/api/auth/login", response_model=LoginResponse)
 def login(credentials: LoginRequest) -> LoginResponse:
     """Authenticate a user and issue an eight-hour JWT bearer token."""
@@ -284,6 +315,133 @@ def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
         registration_number=registration_number,
         status="Available",
         message="Vehicle registered successfully",
+    )
+
+
+@app.post("/api/trips", response_model=TripCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_trip(trip: TripCreateRequest) -> TripCreateResponse:
+    """Create a draft trip after validating vehicle and driver capacity."""
+    if trip.cargo_weight <= 0 or trip.planned_distance <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Weight and distance must be positive")
+
+    with connection() as database:
+        vehicle = database.execute(
+            "SELECT registration_number, max_load_capacity, status FROM vehicles WHERE registration_number = ?",
+            (trip.vehicle_reg.strip(),),
+        ).fetchone()
+        if not vehicle:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+
+        driver = database.execute("SELECT id, status FROM drivers WHERE id = ?", (trip.driver_id,)).fetchone()
+        if not driver:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+
+        if trip.cargo_weight > vehicle["max_load_capacity"]:
+            w_str = format_num(trip.cargo_weight)
+            cap_str = format_num(vehicle["max_load_capacity"])
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cargo weight ({w_str}kg) exceeds vehicle load capacity ({cap_str}kg)",
+            )
+
+        cursor = database.execute(
+            """INSERT INTO trips
+               (source, destination, vehicle_reg, driver_id, cargo_weight, planned_distance, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'Draft')""",
+            (
+                trip.source.strip(),
+                trip.destination.strip(),
+                trip.vehicle_reg.strip(),
+                trip.driver_id,
+                trip.cargo_weight,
+                trip.planned_distance,
+            ),
+        )
+        trip_id = cursor.lastrowid
+
+    return TripCreateResponse(trip_id=trip_id, status="Draft")
+
+
+@app.post("/api/trips/{id}/dispatch", response_model=TripStatusUpdateResponse)
+def dispatch_trip(id: int) -> TripStatusUpdateResponse:
+    """Dispatch a drafted trip and automatically switch vehicle and driver status to On Trip."""
+    with connection() as database:
+        trip = database.execute(
+            "SELECT id, vehicle_reg, driver_id, status FROM trips WHERE id = ?", (id,)
+        ).fetchone()
+        if not trip:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+        if trip["status"] != "Draft":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Draft trips can be dispatched")
+
+        driver = database.execute(
+            "SELECT id, status, license_expiry_date FROM drivers WHERE id = ?", (trip["driver_id"],)
+        ).fetchone()
+        if not driver:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+
+        is_expired = False
+        try:
+            exp_date = datetime.strptime(driver["license_expiry_date"], "%Y-%m-%d").date()
+            if exp_date < datetime.now(timezone.utc).date():
+                is_expired = True
+        except Exception:
+            pass
+
+        if driver["status"] == "Suspended" or is_expired:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Driver is currently Suspended or has an expired license.",
+            )
+
+        vehicle = database.execute(
+            "SELECT registration_number, status FROM vehicles WHERE registration_number = ?",
+            (trip["vehicle_reg"],),
+        ).fetchone()
+        if not vehicle:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+
+        database.execute("UPDATE trips SET status = 'Dispatched' WHERE id = ?", (id,))
+        database.execute("UPDATE vehicles SET status = 'On Trip' WHERE registration_number = ?", (trip["vehicle_reg"],))
+        database.execute("UPDATE drivers SET status = 'On Trip' WHERE id = ?", (trip["driver_id"],))
+
+    return TripStatusUpdateResponse(
+        trip_id=id,
+        status="Dispatched",
+        vehicle_status="On Trip",
+        driver_status="On Trip",
+    )
+
+
+@app.post("/api/trips/{id}/complete", response_model=TripStatusUpdateResponse)
+def complete_trip(id: int, request: TripCompleteRequest) -> TripStatusUpdateResponse:
+    """Complete an active trip by logging final mileage, fuel, and restoring vehicle and driver to Available."""
+    with connection() as database:
+        trip = database.execute(
+            "SELECT id, vehicle_reg, driver_id, status FROM trips WHERE id = ?", (id,)
+        ).fetchone()
+        if not trip:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+        if trip["status"] != "Dispatched":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Dispatched trips can be completed")
+
+        database.execute(
+            """UPDATE trips
+               SET final_odometer = ?, fuel_consumed = ?, revenue = ?, status = 'Completed'
+               WHERE id = ?""",
+            (request.final_odometer, request.fuel_consumed_liters, request.revenue, id),
+        )
+        database.execute(
+            "UPDATE vehicles SET odometer = ?, status = 'Available' WHERE registration_number = ?",
+            (request.final_odometer, trip["vehicle_reg"]),
+        )
+        database.execute("UPDATE drivers SET status = 'Available' WHERE id = ?", (trip["driver_id"],))
+
+    return TripStatusUpdateResponse(
+        trip_id=id,
+        status="Completed",
+        vehicle_status="Available",
+        driver_status="Available",
     )
 
 
