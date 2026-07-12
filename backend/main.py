@@ -41,6 +41,11 @@ def initialize_database() -> None:
             database.executescript(schema_path.read_text(encoding="utf-8"))
         if seed_path.exists():
             database.executescript(seed_path.read_text(encoding="utf-8"))
+        
+        # Override seed hashes with the known development password
+        dev_password = "securepassword123"
+        password_hash = bcrypt.hashpw(dev_password.encode(), bcrypt.gensalt()).decode()
+        database.execute("UPDATE users SET password_hash = ?", (password_hash,))
 
 
 @asynccontextmanager
