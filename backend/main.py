@@ -12,8 +12,8 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DATABASE_PATH = Path(os.getenv("DATABASE_PATH", ROOT_DIR / "transitops.db"))
+BACKEND_DIR = Path(__file__).resolve().parent
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", BACKEND_DIR / "transitops.db"))
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-development-secret")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRES_HOURS = 8
@@ -61,8 +61,8 @@ def connection():
 def initialize_database() -> None:
     """Create and populate the local SQLite database from the supplied SQL files."""
     with connection() as database:
-        database.executescript((ROOT_DIR / "schema.sql").read_text(encoding="utf-8"))
-        database.executescript((ROOT_DIR / "seed_data.sql").read_text(encoding="utf-8"))
+        database.executescript((BACKEND_DIR / "schema.sql").read_text(encoding="utf-8"))
+        database.executescript((BACKEND_DIR / "seed_data.sql").read_text(encoding="utf-8"))
 
         # The supplied seed hashes are placeholders. Set a known development password
         # so the seeded accounts can be exercised locally.
