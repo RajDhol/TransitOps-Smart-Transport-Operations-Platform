@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { MockVehicle, MockDriver, TABLE_HEADERS } from '../../constants/dashboardContent';
 import { VEHICLE_PAGE_TITLES, VEHICLE_FORM_SCHEMA } from '../../constants/vehicleContent';
 import { DRIVER_PAGE_TITLES, DRIVER_FORM_SCHEMA } from '../../constants/driverContent';
-
+import { DashboardStats } from '../../services/authService';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -16,6 +16,7 @@ interface FleetManagerDashboardProps {
   drivers: MockDriver[];
   onRegisterVehicle: (newVehicle: MockVehicle) => void;
   onRegisterDriver: (newDriver: MockDriver) => void;
+  stats?: DashboardStats | null;
 }
 
 export default function FleetManagerDashboard({
@@ -23,16 +24,17 @@ export default function FleetManagerDashboard({
   drivers,
   onRegisterVehicle,
   onRegisterDriver,
+  stats: statsProps,
 }: FleetManagerDashboardProps) {
   // Modal states: 'vehicle' | 'driver' | 'maintenance' | null
   const [activeForm, setActiveForm] = useState<'vehicle' | 'driver' | 'maintenance' | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const stats = [
-    { label: 'Total Vehicles', value: vehicles.length },
-    { label: 'In Shop (Maintenance)', value: vehicles.filter((v) => v.status === 'In Shop').length, color: 'text-amber-600' },
-    { label: 'Available Drivers', value: drivers.filter((d) => d.status === 'Available').length, color: 'text-green-600' },
-    { label: 'Fleet Utilization', value: '66.7%', color: 'text-indigo-600' },
+    { label: 'Total Vehicles', value: statsProps ? statsProps.total_vehicles : vehicles.length },
+    { label: 'In Shop (Maintenance)', value: statsProps ? statsProps.vehicles_in_shop : vehicles.filter((v) => v.status === 'In Shop').length, color: 'text-amber-600' },
+    { label: 'Available Drivers', value: statsProps ? statsProps.available_drivers : drivers.filter((d) => d.status === 'Available').length, color: 'text-green-600' },
+    { label: 'Fleet Utilization', value: statsProps ? `${statsProps.fleet_utilization_percentage}%` : '66.7%', color: 'text-indigo-600' },
   ];
 
   // Dynamic Maintenance Schema
@@ -268,8 +270,8 @@ export default function FleetManagerDashboard({
                       <Badge
                         color={
                           v.status === 'Available' ? 'success' :
-                          v.status === 'On Trip' ? 'info' :
-                          v.status === 'In Shop' ? 'warning' : 'gray'
+                            v.status === 'On Trip' ? 'info' :
+                              v.status === 'In Shop' ? 'warning' : 'gray'
                         }
                       >
                         {v.status}
