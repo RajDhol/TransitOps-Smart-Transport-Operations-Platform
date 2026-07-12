@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   REPORT_PAGE_TITLES,
   REPORT_TABLE_HEADERS
@@ -26,39 +26,40 @@ export default function ReportsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
 
-  // Mock performance dataset
-  const [performances, setPerformances] = useState<VehiclePerformance[]>([
-    {
-      registration_number: 'VAN-05-NY',
-      model: 'Ford Transit Van',
-      acquisition_cost: 52000,
-      maintenance_cost: 1200,
-      fuel_cost: 3150,
-      revenue: 18500,
-      distance_driven: 12000,
-      fuel_consumed: 1000, // 12 km/L
-    },
-    {
-      registration_number: 'TRK-02-CA',
-      model: 'Volvo FH16 Heavy Truck',
-      acquisition_cost: 172000,
-      maintenance_cost: 4500,
-      fuel_cost: 18400,
-      revenue: 45000,
-      distance_driven: 45000,
-      fuel_consumed: 9000, // 5 km/L
-    },
-    {
-      registration_number: 'SEMI-01-TX',
-      model: 'Scania R500 Semi-Truck',
-      acquisition_cost: 180000,
-      maintenance_cost: 8200,
-      fuel_cost: 22050,
-      revenue: 58000,
-      distance_driven: 60000,
-      fuel_consumed: 15000, // 4 km/L
-    },
-  ]);
+  const [performances, setPerformances] = useState<VehiclePerformance[]>([]);
+  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReportData = async () => {
+    try {
+      const [analyticsRes, settingsRes] = await Promise.all([
+        fetch('http://localhost:8000/api/reports/analytics'),
+        fetch('http://localhost:8000/api/settings')
+      ]);
+
+      if (!analyticsRes.ok) {
+        throw new Error('Failed to load dynamic report analytics from backend.');
+      }
+      const analyticsData = await analyticsRes.json();
+      setPerformances(analyticsData.performances || []);
+
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        if (settingsData.currency && settingsData.currency.includes('INR')) {
+          setCurrencySymbol('Rs. ');
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error communicating with backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportData();
+  }, []);
 
   const totalPages = Math.ceil(performances.length / ITEMS_PER_PAGE);
   const paginatedPerformances = performances.slice(
@@ -174,7 +175,25 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {paginatedPerformances.map((p) => {
+              {isLoading ? (
+                <tr>
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    Loading performance reports...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-red-500">
+                    {error}
+                  </td>
+                </tr>
+              ) : performances.length === 0 ? (
+                <tr>
+                  <td colSpan={REPORT_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    No vehicle performance records available.
+                  </td>
+                </tr>
+              ) : paginatedPerformances.map((p) => {
                 const efficiency = calculateEfficiency(p);
                 const roi = calculateRoi(p);
 
@@ -182,10 +201,22 @@ export default function ReportsPage() {
                   <tr key={p.registration_number} className="text-gray-700">
                     <td className="py-4 font-semibold">{p.registration_number}</td>
                     <td className="py-4 font-medium text-gray-900">{p.model}</td>
-                    <td className="py-4">${p.acquisition_cost.toLocaleString()}</td>
-                    <td className="py-4 text-amber-600">${p.maintenance_cost.toLocaleString()}</td>
-                    <td className="py-4 text-orange-600">${p.fuel_cost.toLocaleString()}</td>
-                    <td className="py-4 text-green-600 font-semibold">${p.revenue.toLocaleString()}</td>
+                    <td className="py-4">
+                      {currencySymbol}
+                      {p.acquisition_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-amber-600">
+                      {currencySymbol}
+                      {p.maintenance_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-orange-600">
+                      {currencySymbol}
+                      {p.fuel_cost.toLocaleString()}
+                    </td>
+                    <td className="py-4 text-green-600 font-semibold">
+                      {currencySymbol}
+                      {p.revenue.toLocaleString()}
+                    </td>
                     <td className="py-4 font-semibold text-indigo-600">
                       {efficiency.toFixed(1)} km/L
                     </td>

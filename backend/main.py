@@ -195,12 +195,24 @@ class MaintenanceCompleteResponse(BaseModel):
     vehicle_status: str
 
 
+class VehiclePerformanceResponse(BaseModel):
+    registration_number: str
+    model: str
+    acquisition_cost: float
+    maintenance_cost: float
+    fuel_cost: float
+    revenue: float
+    distance_driven: float
+    fuel_consumed: float
+
+
 class AnalyticsResponse(BaseModel):
     total_operational_cost: float
     total_maintenance_cost: float
     total_fuel_cost: float
     fuel_efficiency_km_per_liter: float
     vehicle_roi: dict[str, float]
+    performances: list[VehiclePerformanceResponse]
 
 
 def format_num(value: float) -> str:
@@ -892,28 +904,51 @@ def get_analytics() -> AnalyticsResponse:
                FROM trips WHERE status = 'Completed' AND fuel_consumed > 0"""
         ).fetchone()
         roi_rows = database.execute(
-            """SELECT v.registration_number, v.acquisition_cost,
+            """SELECT v.registration_number, v.model, v.acquisition_cost,
                       COALESCE((SELECT SUM(revenue) FROM trips t WHERE t.vehicle_reg = v.registration_number), 0) AS revenue,
                       COALESCE((SELECT SUM(cost) FROM fuel_logs f WHERE f.vehicle_reg = v.registration_number), 0) AS fuel_cost,
                       COALESCE((SELECT SUM(cost) FROM maintenance_logs m WHERE m.vehicle_reg = v.registration_number), 0) AS maintenance_cost,
-                      COALESCE((SELECT SUM(cost) FROM expenses e WHERE e.vehicle_reg = v.registration_number), 0) AS expense_cost
+                      COALESCE((SELECT SUM(cost) FROM expenses e WHERE e.vehicle_reg = v.registration_number), 0) AS expense_cost,
+                      COALESCE((SELECT SUM(planned_distance) FROM trips t WHERE t.vehicle_reg = v.registration_number AND t.status = 'Completed'), 0) AS distance_driven,
+                      COALESCE((SELECT SUM(fuel_consumed) FROM trips t WHERE t.vehicle_reg = v.registration_number AND t.status = 'Completed'), 0) AS fuel_consumed
                FROM vehicles v ORDER BY v.registration_number"""
         ).fetchall()
 
-    vehicle_roi = {
-        row["registration_number"]: round(
-            (float(row["revenue"]) - float(row["fuel_cost"]) - float(row["maintenance_cost"]) - float(row["expense_cost"]))
-            / float(row["acquisition_cost"]),
-            4,
-        ) if float(row["acquisition_cost"]) > 0 else 0.0
-        for row in roi_rows
-    }
+    performances = []
+    vehicle_roi = {}
+    for row in roi_rows:
+        reg = row["registration_number"]
+        acq_cost = float(row["acquisition_cost"])
+        rev = float(row["revenue"])
+        f_cost = float(row["fuel_cost"])
+        m_cost = float(row["maintenance_cost"])
+        e_cost = float(row["expense_cost"])
+        dist = float(row["distance_driven"])
+        fuel = float(row["fuel_consumed"])
+
+        roi = round((rev - f_cost - m_cost - e_cost) / acq_cost, 4) if acq_cost > 0 else 0.0
+        vehicle_roi[reg] = roi
+
+        performances.append(
+            VehiclePerformanceResponse(
+                registration_number=reg,
+                model=row["model"],
+                acquisition_cost=acq_cost,
+                maintenance_cost=m_cost,
+                fuel_cost=f_cost,
+                revenue=rev,
+                distance_driven=dist,
+                fuel_consumed=fuel
+            )
+        )
+
     return AnalyticsResponse(
         total_operational_cost=round(maintenance_cost + fuel_cost + expense_cost, 2),
         total_maintenance_cost=round(maintenance_cost, 2),
         total_fuel_cost=round(fuel_cost, 2),
         fuel_efficiency_km_per_liter=round(float(distance) / float(fuel_consumed), 2) if fuel_consumed else 0.0,
         vehicle_roi=vehicle_roi,
+        performances=performances,
     )
 
 
