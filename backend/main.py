@@ -403,6 +403,51 @@ def register_vehicle(vehicle: VehicleCreate) -> VehicleRegistrationResponse:
     )
 
 
+@app.post("/api/vehicles/{registration_number}/retire")
+def retire_vehicle(registration_number: str) -> dict:
+    """Retire a vehicle from service."""
+    reg = registration_number.strip()
+    with connection() as database:
+        vehicle = database.execute(
+            "SELECT status FROM vehicles WHERE registration_number = ?", (reg,)
+        ).fetchone()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+        if vehicle["status"] == "On Trip":
+            raise HTTPException(status_code=400, detail="Cannot retire a vehicle currently On Trip.")
+        database.execute(
+            "UPDATE vehicles SET status = 'Retired' WHERE registration_number = ?", (reg,)
+        )
+    return {"registration_number": reg, "status": "Retired"}
+
+
+@app.delete("/api/vehicles/{registration_number}")
+def delete_vehicle(registration_number: str) -> dict:
+    """Delete a vehicle from the fleet registry."""
+    reg = registration_number.strip()
+    with connection() as database:
+        vehicle = database.execute(
+            "SELECT status FROM vehicles WHERE registration_number = ?", (reg,)
+        ).fetchone()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+        if vehicle["status"] == "On Trip":
+            raise HTTPException(status_code=400, detail="Cannot delete a vehicle currently On Trip.")
+        
+        # Check active trip dependencies
+        active_trip = database.execute(
+            "SELECT 1 FROM trips WHERE vehicle_reg = ? AND status IN ('Draft', 'Dispatched')",
+            (reg,)
+        ).fetchone()
+        if active_trip:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete vehicle with active or draft trip assignments."
+            )
+        database.execute("DELETE FROM vehicles WHERE registration_number = ?", (reg,))
+    return {"registration_number": reg, "deleted": True}
+
+
 # ---------------------------------------------------------------------------
 # DRIVER ENDPOINTS
 # ---------------------------------------------------------------------------

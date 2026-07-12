@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { INITIAL_VEHICLES, MockVehicle } from '../../constants/dashboardContent';
 import {
   VEHICLE_PAGE_TITLES,
   VEHICLE_TYPES,
@@ -17,13 +16,25 @@ import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import DynamicForm from '../../components/ui/DynamicForm';
 
+interface Vehicle {
+  registration_number: string;
+  model: string;
+  type: string;
+  max_load_capacity: number;
+  odometer: number;
+  acquisition_cost: number;
+  status: 'Available' | 'On Trip' | 'In Shop' | 'Retired';
+}
+
 export default function VehicleRegistryPage() {
   const { user } = useAuth();
   const isManager = user?.role === 'Fleet Manager';
 
-  // Mock vehicles roster state
-  const [vehicles, setVehicles] = useState<MockVehicle[]>(INITIAL_VEHICLES);
-  
+  // State
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [currencyCode, setCurrencyCode] = useState('INR (Rs)');
+  const [isLoading, setIsLoading] = useState(true);
+
   // UI Dialog toggles
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,8 +44,35 @@ export default function VehicleRegistryPage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // --- API DATA FETCH ---
+  const fetchFleetData = async () => {
+    try {
+      const [vRes, sRes] = await Promise.all([
+        fetch('http://localhost:8000/api/vehicles'),
+        fetch('http://localhost:8000/api/settings')
+      ]);
+
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        setVehicles(vData);
+      }
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setCurrencyCode(sData.currency || 'INR (Rs)');
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Failed to synchronize vehicles registry with server.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFleetData();
+  }, []);
+
   // --- FORM SUBMIT & DYNAMIC VALIDATION ---
-  const handleFormSubmit = (formData: Record<string, string>) => {
+  const handleFormSubmit = async (formData: Record<string, string>) => {
     if (!isManager) return;
     setFormErrors({});
     setNotification(null);
@@ -43,22 +81,15 @@ export default function VehicleRegistryPage() {
 
     if (!formData.registration_number?.trim()) {
       errors.registration_number = 'Registration number is required.';
-    } else {
-      const exists = vehicles.some(
-        (v) => v.registration_number.toLowerCase() === formData.registration_number.trim().toLowerCase()
-      );
-      if (exists) {
-        errors.registration_number = 'This registration number is already registered.';
-      }
     }
 
     if (!formData.model?.trim()) {
       errors.model = 'Vehicle model name is required.';
     }
 
-    const capacity = parseFloat(formData.max_capacity);
+    const capacity = parseFloat(formData.max_load_capacity);
     if (isNaN(capacity) || capacity <= 0) {
-      errors.max_capacity = 'Max capacity must be a positive number.';
+      errors.max_load_capacity = 'Max capacity must be a positive number.';
     }
 
     const odo = parseFloat(formData.odometer);
@@ -76,34 +107,80 @@ export default function VehicleRegistryPage() {
       return;
     }
 
-    const newVehicle: MockVehicle = {
-      registration_number: formData.registration_number.toUpperCase().trim(),
-      model: formData.model.trim(),
-      type: formData.type,
-      max_capacity: capacity,
-      odometer: odo,
-      status: formData.status as any,
-      region: formData.region,
-    };
+    try {
+      const res = await fetch('http://localhost:8000/api/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registration_number: formData.registration_number.toUpperCase().trim(),
+          model: formData.model.trim(),
+          type: formData.type,
+          max_load_capacity: capacity,
+          odometer: odo,
+          acquisition_cost: cost,
+        }),
+      });
 
-    setVehicles([newVehicle, ...vehicles]);
-    setIsModalOpen(false);
-    setNotification({
-      type: 'success',
-      message: `Vehicle ${newVehicle.registration_number} registered successfully in the fleet.`,
-    });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.detail && data.detail.includes('unique')) {
+          setFormErrors({ registration_number: 'This vehicle registration number is already registered.' });
+          return;
+        }
+        throw new Error(data.detail || 'Registration failed.');
+      }
+
+      setNotification({
+        type: 'success',
+        message: `Vehicle ${formData.registration_number.toUpperCase().trim()} registered successfully.`,
+      });
+      setIsModalOpen(false);
+      fetchFleetData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
-  const handleRetireVehicle = (regNo: string) => {
+  const handleRetireVehicle = async (regNo: string) => {
     if (!isManager) return;
-    setVehicles(
-      vehicles.map((v) => (v.registration_number === regNo ? { ...v, status: 'Retired' } : v))
-    );
+    setNotification(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/vehicles/${regNo}/retire`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to retire vehicle.');
+      }
+      setNotification({
+        type: 'success',
+        message: `Vehicle ${regNo} retired successfully from active dispatch pool.`,
+      });
+      fetchFleetData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
-  const handleDeleteVehicle = (regNo: string) => {
+  const handleDeleteVehicle = async (regNo: string) => {
     if (!isManager) return;
-    setVehicles(vehicles.filter((v) => v.registration_number !== regNo));
+    setNotification(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/vehicles/${regNo}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to delete vehicle.');
+      }
+      setNotification({
+        type: 'success',
+        message: `Vehicle ${regNo} deleted successfully from fleet registry.`,
+      });
+      fetchFleetData();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message });
+    }
   };
 
   const filteredVehicles = vehicles.filter((v) => {
@@ -121,11 +198,15 @@ export default function VehicleRegistryPage() {
       {/* Notifications */}
       {notification && (
         <div
-          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 bg-green-50 border-green-200 text-green-800`}
+          className={`p-4 border text-sm font-medium rounded flex items-start gap-2.5 ${
+            notification.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+          }`}
         >
-          <span>✓</span>
+          <span>{notification.type === 'success' ? '✓' : '✖'}</span>
           <div>
-            <p className="font-semibold">Success</p>
+            <p className="font-semibold">{notification.type === 'success' ? 'Success' : 'Error'}</p>
             <p className="mt-0.5">{notification.message}</p>
           </div>
         </div>
@@ -188,16 +269,22 @@ export default function VehicleRegistryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredVehicles.map((v) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={VEHICLE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
+                    Loading fleet data...
+                  </td>
+                </tr>
+              ) : filteredVehicles.map((v) => (
                 <tr key={v.registration_number} className="text-gray-700">
                   <td className="py-3 font-semibold">{v.registration_number}</td>
                   <td className="py-3">{v.model}</td>
                   <td className="py-3">{v.type}</td>
-                  <td className="py-3">{v.max_capacity} kg</td>
-                  <td className="py-3">{v.odometer} km</td>
-                  <td className="py-3">$25,000.00</td>
-                  <td className="py-3">
-                    <Badge color="gray">{v.region}</Badge>
+                  <td className="py-3">{v.max_load_capacity.toLocaleString()} kg</td>
+                  <td className="py-3">{v.odometer.toLocaleString()} km</td>
+                  <td className="py-3 font-semibold">
+                    {currencyCode.includes('INR') ? 'Rs. ' : '$'}
+                    {v.acquisition_cost.toLocaleString()}
                   </td>
                   <td className="py-3">
                     <Badge
@@ -216,7 +303,7 @@ export default function VehicleRegistryPage() {
                   </td>
                   {isManager && (
                     <td className="py-3 text-right flex justify-end gap-2">
-                      {v.status !== 'Retired' && (
+                      {v.status !== 'Retired' && v.status !== 'On Trip' && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -225,19 +312,21 @@ export default function VehicleRegistryPage() {
                           Retire
                         </Button>
                       )}
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleDeleteVehicle(v.registration_number)}
-                      >
-                        Delete
-                      </Button>
+                      {v.status !== 'On Trip' && (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDeleteVehicle(v.registration_number)}
+                        >
+                          Delete
+                        </Button>
+                      )}
                     </td>
                   )}
                 </tr>
               ))}
 
-              {filteredVehicles.length === 0 && (
+              {!isLoading && filteredVehicles.length === 0 && (
                 <tr>
                   <td colSpan={VEHICLE_TABLE_HEADERS.length} className="text-center py-8 text-gray-400">
                     No vehicles found matching the search or filters.
