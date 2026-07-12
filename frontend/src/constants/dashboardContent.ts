@@ -7,6 +7,7 @@ export interface MockVehicle {
   max_capacity: number;
   odometer: number;
   status: 'Available' | 'On Trip' | 'In Shop' | 'Retired';
+  region: string; // <--- Added region for filtering
 }
 
 export interface MockDriver {
@@ -31,9 +32,10 @@ export interface MockTrip {
 }
 
 export const INITIAL_VEHICLES: MockVehicle[] = [
-  { registration_number: 'Van-05', model: 'Ford Transit', type: 'Van', max_capacity: 500, odometer: 12000, status: 'Available' },
-  { registration_number: 'Truck-02', model: 'Volvo FH16', type: 'Heavy Truck', max_capacity: 15000, odometer: 85000, status: 'On Trip' },
-  { registration_number: 'Semi-01', model: 'Scania R500', type: 'Semi-Truck', max_capacity: 20000, odometer: 150000, status: 'In Shop' },
+  { registration_number: 'VAN-05-NY', model: 'Ford Transit', type: 'Van', max_capacity: 500, odometer: 12000, status: 'Available', region: 'NY' },
+  { registration_number: 'TRK-02-CA', model: 'Volvo FH16', type: 'Heavy Truck', max_capacity: 15000, odometer: 85000, status: 'On Trip', region: 'CA' },
+  { registration_number: 'SEMI-01-TX', model: 'Scania R500', type: 'Semi-Truck', max_capacity: 20000, odometer: 150000, status: 'In Shop', region: 'TX' },
+  { registration_number: 'VAN-09-FL', model: 'Ram ProMaster', type: 'Van', max_capacity: 600, odometer: 8400, status: 'Available', region: 'FL' },
 ];
 
 export const INITIAL_DRIVERS: MockDriver[] = [
@@ -44,8 +46,8 @@ export const INITIAL_DRIVERS: MockDriver[] = [
 ];
 
 export const INITIAL_TRIPS: MockTrip[] = [
-  { id: 101, source: 'Warehouse East', destination: 'Retail Hub A', vehicle_reg: 'Truck-02', driver_name: 'Sarah', cargo_weight: 450, planned_distance: 120, status: 'Dispatched' },
-  { id: 102, source: 'Distribution Center', destination: 'Local Depot B', vehicle_reg: 'Van-05', driver_name: 'Alex', cargo_weight: 350, planned_distance: 45, status: 'Draft' },
+  { id: 101, source: 'Warehouse East', destination: 'Retail Hub A', vehicle_reg: 'TRK-02-CA', driver_name: 'Sarah', cargo_weight: 450, planned_distance: 120, status: 'Dispatched' },
+  { id: 102, source: 'Distribution Center', destination: 'Local Depot B', vehicle_reg: 'VAN-05-NY', driver_name: 'Alex', cargo_weight: 350, planned_distance: 45, status: 'Draft' },
 ];
 
 export const DASHBOARD_TITLES = {
@@ -55,7 +57,31 @@ export const DASHBOARD_TITLES = {
 };
 
 export const TABLE_HEADERS = {
-  vehicles: ['Reg Number', 'Model', 'Type', 'Max Cap', 'Odometer', 'Status'],
+  vehicles: ['Reg Number', 'Model', 'Type', 'Max Cap', 'Odometer', 'Region', 'Status'],
   drivers: ['Driver Name', 'License Expiry', 'Safety Score', 'Current Status', 'Actions'],
   roi: ['Vehicle', 'Acquisition Cost', 'Maintenance Cost', 'Fuel Cost', 'Revenue Earned', 'Calculated ROI'],
+};
+
+// --- CENTRAL FILTER CONFIGURATION OPTIONS ---
+export const FILTER_OPTIONS = {
+  types: [
+    { value: '', label: 'All Types' },
+    { value: 'Van', label: 'Van' },
+    { value: 'Heavy Truck', label: 'Heavy Truck' },
+    { value: 'Semi-Truck', label: 'Semi-Truck' },
+  ],
+  statuses: [
+    { value: '', label: 'All Statuses' },
+    { value: 'Available', label: 'Available' },
+    { value: 'On Trip', label: 'On Trip' },
+    { value: 'In Shop', label: 'In Shop' },
+    { value: 'Retired', label: 'Retired' },
+  ],
+  regions: [
+    { value: '', label: 'All Regions' },
+    { value: 'NY', label: 'New York (NY)' },
+    { value: 'CA', label: 'California (CA)' },
+    { value: 'TX', label: 'Texas (TX)' },
+    { value: 'FL', label: 'Florida (FL)' },
+  ],
 };

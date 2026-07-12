@@ -52,6 +52,7 @@ export default function FleetManagerDashboard({ vehicles, drivers }: FleetManage
                     <td className="py-3">{v.type}</td>
                     <td className="py-3">{v.max_capacity} kg</td>
                     <td className="py-3">{v.odometer} km</td>
+                    <td className="py-3">{v.region}</td>
                     <td className="py-3">
                       <Badge
                         color={

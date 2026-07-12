@@ -16,6 +16,7 @@ import FleetManagerDashboard from '../components/dashboard/FleetManagerDashboard
 import DriverDashboard from '../components/dashboard/DriverDashboard';
 import SafetyOfficerDashboard from '../components/dashboard/SafetyOfficerDashboard';
 import FinancialAnalystDashboard from '../components/dashboard/FinancialAnalystDashboard';
+import DashboardFilters from '../components/dashboard/DashboardFilters';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -25,11 +26,24 @@ export default function DashboardPage() {
   const [drivers, setDrivers] = useState<MockDriver[]>(INITIAL_DRIVERS);
   const [trips, setTrips] = useState<MockTrip[]>(INITIAL_TRIPS);
 
+  // Filter States
+  const [selectedType, setSelectedType] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedRegion, setSelectedRegion] = useState('');
+
   // System Notifications
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
   if (!user) return null;
+
+  // --- REACTIVE FILTER CALCULATIONS ---
+  const filteredVehicles = vehicles.filter((v) => {
+    const matchesType = !selectedType || v.type === selectedType;
+    const matchesStatus = !selectedStatus || v.status === selectedStatus;
+    const matchesRegion = !selectedRegion || v.region === selectedRegion;
+    return matchesType && matchesStatus && matchesRegion;
+  });
 
   // --- ACTIONS & VALIDATIONS ---
   const handleCreateTrip = (tripForm: {
@@ -200,13 +214,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Filter Component */}
+      <DashboardFilters
+        selectedType={selectedType}
+        setSelectedType={setSelectedType}
+        selectedStatus={selectedStatus}
+        setSelectedStatus={setSelectedStatus}
+        selectedRegion={selectedRegion}
+        setSelectedRegion={setSelectedRegion}
+      />
+
       {/* Dynamic Role-Based Views */}
       {user.role === 'Fleet Manager' && (
-        <FleetManagerDashboard vehicles={vehicles} drivers={drivers} />
+        <FleetManagerDashboard vehicles={filteredVehicles} drivers={drivers} />
       )}
       {user.role === 'Driver' && (
         <DriverDashboard
-          vehicles={vehicles}
+          vehicles={filteredVehicles}
           drivers={drivers}
           trips={trips}
           onCreateTrip={handleCreateTrip}
